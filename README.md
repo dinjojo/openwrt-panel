@@ -1,6 +1,6 @@
 # cake-stats
 
-Real-time web UI for monitoring [CAKE SQM](https://www.bufferbloat.net/projects/codel/wiki/Cake/) statistics on Linux and OpenWrt routers.
+Real-time web UI for monitoring [CAKE SQM](https://www.bufferbloat.net/projects/codel/wiki/Cake/) statistics on Linux and OpenWrt routers — extended into a full-network monitoring panel that describes the live state of an OpenWrt gateway: health verdicts, exit paths (WARP tunnel vs direct line), latency quality, buffering episodes, per-client drill-down and hardware health.
 
 Built for **embedded hardware** where every allocation matters: Fiber v3 keeps HTTP overhead minimal, zerolog emits structured logs with near-zero allocations, and a dedicated `pkg/util` package centralises all allocation-heavy string operations so they can be audited and swapped in one place. The result is a single static binary that streams live per-tier CAKE stats to any browser with negligible CPU and memory cost.
 
@@ -31,27 +31,53 @@ Built for **embedded hardware** where every allocation matters: Fiber v3 keeps H
 ### Desktop
 
 <p align="center">
-	<img src="https://github.com/galpt/cake-stats/blob/main/img/how-it-looks-like-desktop-001.png" alt="Web UI preview" style="max-width:100%;height:auto;" />
+	<img src="img/overview-dark.png" alt="Overview tab — health verdicts, live throughput, top clients" style="max-width:100%;height:auto;" />
 	<br/>
-	<em>UI for desktop screens</em>
+	<em>Overview — one-glance health verdicts, live throughput, top clients, event feed</em>
 </p>
 
 <p align="center">
-	<img src="https://github.com/galpt/cake-stats/blob/main/img/how-it-looks-like-desktop-002.png" alt="Web UI preview" style="max-width:100%;height:auto;" />
+	<img src="img/diag-dark.png" alt="Diagnostics tab — exit paths, latency quality, buffering episodes, WAN history" style="max-width:100%;height:auto;" />
 	<br/>
-	<em>Graphs for desktop screens</em>
+	<em>Diagnostics — exit paths (WARP tunnel vs direct line), latency quality, buffering episodes, 24h WAN history</em>
+</p>
+
+<p align="center">
+	<img src="img/sqm-dark.png" alt="SQM tab — live CAKE queue statistics" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>SQM — live per-qdisc CAKE statistics with sparklines and full-history drill-down</em>
+</p>
+
+<p align="center">
+	<img src="img/clients-dark.png" alt="Clients tab — per-device live rates and history" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Clients — per-device live rates, connection counts and history drill-down</em>
+</p>
+
+<p align="center">
+	<img src="img/system-dark.png" alt="System tab — router hardware history" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>System — CPU, load, memory, temperature and connection-table history</em>
+</p>
+
+### Light theme
+
+<p align="center">
+	<img src="img/diagnostics-light.png" alt="Diagnostics tab in light theme" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Light "porcelain" theme — greyed surfaces, dark ink foreground; toggle in the header</em>
 </p>
 
 ### Mobile
 
 <p align="center">
-	<img src="https://github.com/galpt/cake-stats/blob/main/img/how-it-looks-like-mobile-001.png" alt="Web UI preview" style="max-width:100%;height:auto;" />
+	<img src="img/how-it-looks-like-mobile-001.png" alt="Web UI preview" style="max-width:100%;height:auto;" />
 	<br/>
 	<em>UI for mobile screens</em>
 </p>
 
 <p align="center">
-	<img src="https://github.com/galpt/cake-stats/blob/main/img/how-it-looks-like-mobile-002.png" alt="Web UI preview" style="max-width:100%;height:auto;" />
+	<img src="img/how-it-looks-like-mobile-002.png" alt="Graphs on mobile screens" style="max-width:100%;height:auto;" />
 	<br/>
 	<em>Graphs for mobile screens</em>
 </p>
@@ -74,11 +100,23 @@ Built for **embedded hardware** where every allocation matters: Fiber v3 keeps H
 - Built on Fiber v3 with zerolog for structured logs
 - Default poll interval 100ms for near-instant UI updates (adjustable via `-interval`)
 - Single static binary — no runtime dependencies
-- Web UI: dark TUI aesthetic (`#2D3C59` bg, JetBrains Mono, zero hover animations)
+- Web UI: dark ops-console theme and a greyed light "porcelain" theme (toggle in the header), Inter + JetBrains Mono, values in neutral colour with status carried by dots and alerts — designed for spotting problems, not decorating panels
 - Responsive for desktop and mobile (sticky first column, horizontal scroll on small screens)
 - Per-interface **live sparklines** (TX throughput, avg latency, drops/s) with current-value labels
 - Tap/click any sparkline bar to open a **full-screen history modal** with three uPlot time-series charts
 - Server-side ring buffer retains history across page reloads (configurable via `-history` flag)
+
+### Health monitoring &amp; verdicts (beyond CAKE stats)
+
+- **Plain-language health checks** — Internet, gateway, DNS, SQM qdiscs, connection table, clock, WARP tunnel — each returns an ok/warn/crit verdict with a plain-English explanation ("what this means"), surfaced as one health bar on the Overview tab
+- **Exit-path visibility** — live WARP tunnel state (handshake age, reconnect counts, 10-second traffic rates) next to the native/direct line traffic, so you can see both ways out and which one is carrying what
+- **Bufferbloat probe** — optional `scripts/bufferbloat_probe.sh` (cron, e.g. hourly) saturates the line with multiple parallel flows and pushes latency-under-load, burst speed and idle RTT metrics to VictoriaMetrics over `/api/v1/import/prometheus`
+- **Latency quality analytics** — p50/p95 latency, loaded-vs-idle comparison and automatic **buffering episode detection** (queue-latency spikes while the line is busy) over 24h/7d/30d ranges
+- **Client drill-down** — per-device live rates, connection counts and clickable history with named devices; top talkers first
+- **Event feed** — persistent events (WAN down/up, PPPoE reconnects, tunnel down/up, probe results, config changes) with counts over 24h/7d
+- **Firewall &amp; conntrack** — aggregate WAN reject counters with baseline-aware alerting (sudden flood detection), connection-table utilisation, and hardware health (NVMe via `nvme`, temperature, load)
+- **VictoriaMetrics integration** — long-term history is queried from a local VM instance when configured; the dashboard falls back to in-process history otherwise
+- **Optional clock-drift check** — SNTP with an HTTP `Date` fallback for ISPs that block UDP/123
 
 [&#8593; Back to Table of Contents](#table-of-contents)
 

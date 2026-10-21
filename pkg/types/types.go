@@ -82,6 +82,7 @@ type CakeStats struct {
 	// Zero on the first poll (no previous sample to diff against).
 	TxBytesPerS  float64 `json:"tx_bytes_per_s"`
 	DropsPerS    float64 `json:"drops_per_s"`
+	MarksPerS    float64 `json:"marks_per_s"`
 	MaxAvDelayMs float64 `json:"max_av_delay_ms"`
 	MaxPkDelayMs float64 `json:"max_pk_delay_ms"`
 }

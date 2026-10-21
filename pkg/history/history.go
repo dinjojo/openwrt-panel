@@ -12,6 +12,7 @@ import (
 type ifaceState struct {
 	prevTxBytes uint64
 	prevDropped uint64
+	prevMarks   uint64
 	prevTime    time.Time
 	samples     []types.HistorySample
 	head        int
@@ -22,6 +23,7 @@ func newIfaceState(capacity int, cs *types.CakeStats) *ifaceState {
 	return &ifaceState{
 		prevTxBytes: txBytes(cs),
 		prevDropped: cs.Dropped,
+		prevMarks:   marksTotal(cs),
 		prevTime:    time.Now(),
 		samples:     make([]types.HistorySample, capacity),
 	}
@@ -34,6 +36,15 @@ func txBytes(cs *types.CakeStats) uint64 {
 	var sum uint64
 	for _, t := range cs.Tiers {
 		sum += t.Bytes
+	}
+	return sum
+}
+
+// marksTotal sums ECN marks across all tiers of a qdisc.
+func marksTotal(cs *types.CakeStats) uint64 {
+	var sum uint64
+	for _, t := range cs.Tiers {
+		sum += t.Marks
 	}
 	return sum
 }
@@ -103,10 +114,15 @@ func (hs *HistoryStore) Record(stats []types.CakeStats, interval time.Duration) 
 		if cs.Dropped >= st.prevDropped {
 			drRate = float64(cs.Dropped-st.prevDropped) / elapsed
 		}
+		var mkRate float64
+		if marksTotal(cs) >= st.prevMarks {
+			mkRate = float64(marksTotal(cs)-st.prevMarks) / elapsed
+		}
 		avMs := maxDelayMs(cs.Tiers, func(t types.CakeTier) string { return t.AvDelay })
 		pkMs := maxDelayMs(cs.Tiers, func(t types.CakeTier) string { return t.PkDelay })
 		cs.TxBytesPerS = txRate
 		cs.DropsPerS = drRate
+		cs.MarksPerS = mkRate
 		cs.MaxAvDelayMs = avMs
 		cs.MaxPkDelayMs = pkMs
 		st.push(types.HistorySample{
@@ -118,6 +134,7 @@ func (hs *HistoryStore) Record(stats []types.CakeStats, interval time.Duration) 
 		}, hs.capacity)
 		st.prevTxBytes = currTx
 		st.prevDropped = cs.Dropped
+		st.prevMarks = marksTotal(cs)
 		st.prevTime = now
 	}
 

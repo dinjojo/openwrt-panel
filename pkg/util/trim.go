@@ -27,5 +27,3 @@ func AfterColon(s string) string {
 	}
 	return strings.TrimSpace(s[i+1:])
 }
-
-

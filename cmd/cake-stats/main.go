@@ -22,6 +22,7 @@ func main() {
 	port := flag.Int("port", 11112, "TCP port for web interface")
 	interval := flag.Duration("interval", 100*time.Millisecond, "poll interval for tc")
 	histCap := flag.Int("history", 300, "samples to retain per interface")
+	vmURL := flag.String("vm", "http://127.0.0.1:8428", "VictoriaMetrics base URL for history and health checks (empty disables)")
 	showVer := flag.Bool("version", false, "print version and exit")
 
 	flag.Usage = func() {
@@ -42,7 +43,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(addr, *interval, *histCap)
+	srv := server.New(addr, *interval, *histCap, *vmURL, Version)
 	if err := srv.Run(ctx, addr); err != nil {
 		log.Logger.Fatal().Err(err).Msg("fatal")
 	}

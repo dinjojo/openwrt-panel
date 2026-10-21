@@ -6,79 +6,417 @@
   <title>cake-stats</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
         rel="stylesheet" />
   <!-- uPlot — tiny, fast time-series charting library (used in the history modal) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css" />
-  <style type="text/tailwindcss">
-    @theme {
-      --font-mono: "JetBrains Mono", "Courier New", monospace;
+  <style>
+    :root {
+      /* Light — "porcelain": cool grey-blue surfaces, ink text, sky accent.
+         Deliberately greyed, not white — softer on the eyes for long
+         sessions, with a dark ink foreground for strong contrast. */
+      --bg: #DCE2EB; --panel: #EBEFF5; --panel2: #E1E7F0; --line: #BFCADA;
+      --text: #16202E; --muted: #3E4C63; --faint: #66738B;
+      --green: #157A43; --amber: #96610A; --red: #B8362E; --blue: #0B6FA4;
+      --head: #E3E9F1; --accent-text: #F4F7FB;
+      --head-wash: linear-gradient(180deg, rgba(11,111,164,0.06), transparent);
+      --shadow: 0 1px 3px rgba(20,32,51,0.10), 0 1px 2px rgba(20,32,51,0.06);
+      color-scheme: light;
     }
-    /* Apply monospace everywhere and disable all transitions/animations  */
-    *, *::before, *::after {
-      font-family: "JetBrains Mono", "Courier New", monospace;
-      transition: none !important;
-      animation: none !important;
+    html[data-theme="dark"] {
+      /* Dark — cool slate ops console: navy-graphite surfaces, desaturated
+         status tints, sky accent. Per ui-ux guidance: elevate surfaces in
+         small steps, never pure black, 4.5:1 on text. Muted/faint kept
+         bright — small grey text on navy must still read. */
+      --bg: #0F172A; --panel: #1A2438; --panel2: #223050; --line: #31415F;
+      --text: #F3F6FA; --muted: #AEB9CC; --faint: #8B99B0;
+      --green: #7EE2A8; --amber: #FBBF24; --red: #F87171; --blue: #38BDF8;
+      --head: #16223A; --accent-text: #0F172A;
+      --head-wash: linear-gradient(180deg, rgba(56,189,248,0.07), transparent);
+      --shadow: none;
+      color-scheme: dark;
     }
-    /* Sticky first column in tier tables */
-    .sticky-col {
-      position: sticky;
-      left: 0;
-      z-index: 10;
+    body { font-family: 'Inter', system-ui, sans-serif; transition: background .2s ease; letter-spacing: -0.006em; }
+    .num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    /* display role: confident semibold sans for headings and headline values */
+    .display { font-family: 'Inter', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.015em; }
+    /* state glows: health gets a soft halo, not a heavy border */
+    .glow-ok   { box-shadow: 0 0 0 1px rgba(74,222,128,.10), 0 0 14px rgba(74,222,128,.10); }
+    .glow-warn { box-shadow: 0 0 0 1px rgba(251,191,36,.16), 0 0 14px rgba(251,191,36,.13); }
+    .glow-crit { box-shadow: 0 0 0 1px rgba(248,113,113,.18), 0 0 16px rgba(248,113,113,.15); }
+    .rounded-2xl, .rounded-xl { box-shadow: var(--shadow); }
+    .card { box-shadow: var(--shadow); }
+    .scroll-thin::-webkit-scrollbar { height: 6px; }
+    .scroll-thin::-webkit-scrollbar-track { background: var(--panel2); }
+    .scroll-thin::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+    .u-wrap { background: transparent !important; }
+    header { background-image: var(--head-wash); }
+    .u-legend { color: var(--muted) !important; font-size: 11px !important; font-family: 'Fira Sans', sans-serif !important; }
+    .u-legend td, .u-legend th { padding: 2px 8px !important; }
+    .u-offline { display: none !important; }
+    .u-axis { font-family: 'Fira Code', monospace !important; font-size: 10px !important; }
+    details > summary { list-style: none; cursor: pointer; }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] .chev { transform: rotate(90deg); }
+    .chev { transition: transform .15s ease; display: inline-block; }
+    tr[data-mac] { cursor: pointer; transition: background .15s ease; }
+    button, [role="tab"] { cursor: pointer; }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; animation: none !important; }
     }
-    /* Thin scrollbar for table overflow containers */
-    .scroll-thin::-webkit-scrollbar { height: 4px; }
-    .scroll-thin::-webkit-scrollbar-track { background: #1E2D47; }
-    .scroll-thin::-webkit-scrollbar-thumb { background: #3D5070; border-radius: 2px; }
-    /* Sparkline bar — make the clickable area obvious */
-    .sparkline-bar:hover { background: #162238 !important; }
-    /* uPlot dark theme overrides */
-    .u-wrap { background: #0F1B2D !important; }
-    .u-legend { color: #8AABCC !important; font-size: 11px !important; }
-    .u-legend td, .u-legend th { padding: 2px 6px !important; }
   </style>
+  <script>
+    // Apply the saved theme before first paint to avoid a flash.
+    // Dark (the netpulse-style "domestic NOC") is the default.
+    try {
+      const t = localStorage.getItem('cakestats-theme');
+      document.documentElement.dataset.theme = (t === 'light' || t === 'dark') ? t : 'dark';
+    } catch (_) { document.documentElement.dataset.theme = 'dark'; }
+  </script>
 </head>
 
-<body class="bg-[#2D3C59] text-[#FFFFFF] min-h-screen text-sm">
+<body class="bg-[var(--bg)] text-[var(--text)] min-h-screen text-sm antialiased">
 
   <!-- ═══ Top bar ═══════════════════════════════════════════════════════════ -->
-  <header class="bg-[#0F1B2D] border-b border-[#3D5070] px-4 py-2
+  <header class="bg-[var(--head)]/95 backdrop-blur border-b border-[var(--line)] px-4 sm:px-6 py-3
                  flex flex-wrap items-center justify-between gap-2
                  sticky top-0 z-50">
-    <div class="flex items-center gap-4">
-      <span class="font-bold text-[#5B9BD5] text-base tracking-widest">cake-stats</span>
-      <span id="iface-count" class="text-[#6B8AB0] text-xs"></span>
+    <div class="flex items-center gap-3">
+      <div class="w-2.5 h-2.5 rounded-sm bg-[var(--blue)] shadow-[0_0_8px_var(--blue)]"></div>
+      <span class="font-extrabold tracking-tight text-lg display">cake<span class="text-[var(--blue)]">-stats</span></span>
+      <span id="iface-count" class="text-[var(--muted)] text-xs hidden sm:inline"></span>
     </div>
-    <div class="flex items-center gap-4 text-xs">
-      <span id="conn-status" class="text-[#6B8AB0]">connecting</span>
-      <span class="text-[#3D5070]">|</span>
-      <span class="text-[#6B8AB0]">updated</span>
-      <span id="last-updated" class="text-[#8AABCC] tabular-nums">--:--:--</span>
+    <!-- Primary nav: one dashboard, three views -->
+    <nav id="tabs" class="flex items-center gap-1 bg-[var(--panel2)] rounded-xl p-1" role="tablist">
+      <button data-tab="overview" role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">Overview</button>
+      <button data-tab="diag"    role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">Diagnostics</button>
+      <button data-tab="sqm"     role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">SQM</button>
+      <button data-tab="clients" role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">Clients</button>
+      <button data-tab="system"  role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">System</button>
+    </nav>
+    <div class="flex items-center gap-3 text-xs">
+      <span id="conn-status" class="text-[var(--muted)] flex items-center gap-1.5">
+        <span class="w-1.5 h-1.5 rounded-full bg-[var(--muted)]"></span>connecting</span>
+      <span class="text-[var(--line)]">|</span>
+      <span class="text-[var(--muted)]">updated</span>
+      <span id="last-updated" class="num text-[var(--text)]">--:--:--</span>
+      <button id="refresh-btn" aria-label="Refresh this tab now" title="Refresh this tab now"
+              class="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--line)]
+                     bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--text)] transition-colors">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+      </button>
+      <button id="theme-toggle" aria-label="Toggle light and dark theme" title="Toggle theme"
+              class="w-9 h-9 flex items-center justify-center rounded-lg border border-[var(--line)]
+                     bg-[var(--panel)] text-[var(--muted)] hover:text-[var(--text)] transition-colors">
+        <svg id="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg id="icon-sun" class="hidden" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      </button>
     </div>
   </header>
 
   <!-- ═══ Main content ══════════════════════════════════════════════════════ -->
-  <main id="app" class="p-3 space-y-4 max-w-screen-2xl mx-auto">
-    <p id="msg" class="text-[#6B8AB0] text-center py-12">Waiting for data…</p>
+  <main id="app" class="p-3 sm:p-5 space-y-5 max-w-screen-2xl mx-auto">
+
+    <!-- ═══ Tab: Overview — UniFi-style hero row, problems, feed ═════════ -->
+    <section id="tab-overview" role="tabpanel" class="hidden space-y-4">
+
+      <div class="grid gap-4 lg:grid-cols-3">
+        <!-- Internet hero: live throughput + 5-min sparkline + exit path -->
+        <div id="ov-internet" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 cursor-pointer"
+             title="Open line diagnostics (tunnel, latency quality, buffering)">
+          <div class="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span>Internet</span><span class="normal-case tracking-normal font-normal">live &middot; shape of the last 3h</span>
+          </div>
+          <div class="flex items-end gap-8 mt-3">
+            <div>
+              <div class="num display text-4xl font-bold leading-none" style="color:var(--blue)"><span id="ov-down">–</span></div>
+              <div class="text-[11px] text-[var(--muted)] mt-1">down &middot; Mbit/s</div>
+            </div>
+            <div>
+              <div class="num display text-4xl font-bold leading-none" style="color:var(--green)"><span id="ov-up">–</span></div>
+              <div class="text-[11px] text-[var(--muted)] mt-1">up &middot; Mbit/s</div>
+            </div>
+          </div>
+          <canvas id="ov-spark" class="w-full mt-3" height="56"></canvas>
+          <div id="ov-warp" class="text-[11px] mt-2"></div>
+          <div id="ov-wan-foot" class="text-[11px] text-[var(--muted)] mt-1"></div>
+        </div>
+
+        <!-- Gateway card: gauges, click → System tab -->
+        <div id="ov-gateway" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 cursor-pointer"
+             title="Open the System tab for full charts">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Gateway</div>
+          <div class="display text-2xl font-semibold mt-1">NanoPi R6C</div>
+          <div id="ov-gauges" class="mt-3 space-y-2.5"></div>
+        </div>
+
+        <!-- Network card: clients online + top talkers -->
+        <div id="ov-network" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Network</div>
+          <div class="flex items-baseline gap-3 mt-1">
+            <span id="ov-clients" class="num display text-4xl font-bold">–</span>
+            <span class="text-sm text-[var(--muted)]">clients online</span>
+          </div>
+          <div id="ov-top3" class="mt-3 space-y-2"></div>
+        </div>
+      </div>
+
+      <!-- Health verdicts: problem cards + pill row (hidden on other tabs) -->
+      <section id="health-bar" class="space-y-3">
+        <div id="health-summary" class="rounded-xl border border-[var(--line)] bg-[var(--panel)] display
+                    px-4 py-3 text-base font-semibold flex items-center gap-2.5"></div>
+        <div id="health-chips" class="grid gap-3 items-start
+                    grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"></div>
+      </section>
+
+      <div class="grid gap-4 lg:grid-cols-2">
+        <!-- Top clients · clickable rows open the client drill-down -->
+        <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
+          <div id="ov-topclients" class="mt-3 space-y-1"></div>
+        </div>
+        <!-- Events feed -->
+        <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Events</div>
+          <div id="ov-events" class="mt-3 space-y-2 text-[12px]"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: SQM (live queue stats) ═══════════════════════════════════ -->
+    <section id="tab-sqm" role="tabpanel">
+      <p id="msg" class="text-[var(--muted)] text-center py-16">Waiting for data…</p>
+      <div id="ifaces" class="space-y-5"></div>
+    </section>
+
+    <!-- ═══ Tab: Clients (per-device live + history) ══════════════════════ -->
+    <section id="tab-clients" role="tabpanel" class="hidden space-y-5">
+      <!-- Live summary strip -->
+      <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Clients online</div>
+          <div id="cl-online" class="num text-2xl font-bold mt-1">–</div>
+          <div id="cl-online-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+        </div>
+        <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span class="text-[var(--green)]">&#9660;</span> LAN download</div>
+          <div id="cl-rx" class="num text-2xl font-bold mt-1 text-[var(--green)]">–</div>
+          <div class="text-[11px] text-[var(--muted)] mt-0.5">all clients, live</div>
+        </div>
+        <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span class="text-[var(--blue)]">&#9650;</span> LAN upload</div>
+          <div id="cl-tx" class="num text-2xl font-bold mt-1 text-[var(--blue)]">–</div>
+          <div class="text-[11px] text-[var(--muted)] mt-0.5">all clients, live</div>
+        </div>
+        <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top talker now</div>
+          <div id="cl-top" class="num text-2xl font-bold mt-1 truncate">&ndash;</div>
+          <div id="cl-top-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+        </div>
+      </div>
+
+      <!-- Top-talker history -->
+      <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            Top talkers &mdash; download / upload rate</span>
+          <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+            <button data-clrange="1h"  class="clrange-btn px-2.5 py-1 rounded-md">1H</button>
+            <button data-clrange="6h"  class="clrange-btn px-2.5 py-1 rounded-md">6H</button>
+            <button data-clrange="24h" class="clrange-btn px-2.5 py-1 rounded-md">24H</button>
+            <button data-clrange="7d"  class="clrange-btn px-2.5 py-1 rounded-md">7D</button>
+          </div>
+        </div>
+        <div id="cl-charts" class="space-y-4"></div>
+      </div>
+
+      <!-- Live per-client table -->
+      <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden">
+        <div class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
+          <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            LAN devices &mdash; live</span>
+          <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
+                 class="bg-[var(--panel2)] border border-[var(--line)] rounded-lg px-3 py-1.5 text-xs
+                        text-[var(--text)] placeholder-[var(--faint)] outline-none focus:border-[var(--blue)] w-56" />
+        </div>
+        <div class="overflow-x-auto scroll-thin">
+          <table class="w-full text-xs" style="min-width:720px">
+            <thead>
+              <tr class="text-left text-[var(--muted)] border-b border-[var(--line)] bg-[var(--panel2)]">
+                <th class="px-4 py-2.5 font-semibold">Device</th>
+                <th class="px-3 py-2.5 font-semibold">Status</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9660; rate</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9650; rate</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9660; total</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9650; total</th>
+                <th class="px-3 py-2.5 font-semibold text-right">conns</th>
+              </tr>
+            </thead>
+            <tbody id="cl-tbody">
+              <tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">Loading clients…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: System (router health history) ═══════════════════════════ -->
+    <section id="tab-system" role="tabpanel" class="hidden">
+      <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            Router health &mdash; WAN traffic · temperature · load · memory · connections · internet response time · WAN link errors</span>
+          <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+            <button data-sysrange="1h"  class="sysrange-btn px-2.5 py-1 rounded-md">1H</button>
+            <button data-sysrange="6h"  class="sysrange-btn px-2.5 py-1 rounded-md">6H</button>
+            <button data-sysrange="24h" class="sysrange-btn px-2.5 py-1 rounded-md">24H</button>
+            <button data-sysrange="7d"  class="sysrange-btn px-2.5 py-1 rounded-md">7D</button>
+          </div>
+        </div>
+        <div id="wan-strip" class="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-4 hidden"></div>
+        <div id="sys-charts" class="space-y-4"></div>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: Diagnostics (internet line: tunnel, latency quality, buffering) -->
+    <section id="tab-diag" role="tabpanel" class="hidden space-y-5">
+
+      <!-- Connection & exit tunnel: WARP state, reconnects, conntrack, unsolicited rate -->
+      <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
+        <div class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)] mb-3">
+          Exit paths &mdash; WARP tunnel and the direct line</div>
+        <div id="conn-strip" class="grid gap-3 grid-cols-2 lg:grid-cols-5">
+          <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Exit tunnel (WARP)</div>
+            <div id="tn-state" class="text-sm font-semibold mt-1">&ndash;</div>
+            <div id="tn-state-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          </div>
+          <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel traffic</div>
+            <div id="tn-traffic" class="num text-sm font-semibold mt-1">&ndash;</div>
+            <div id="tn-traffic-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          </div>
+          <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Direct line (native)</div>
+            <div id="tn-direct" class="num text-sm font-semibold mt-1">&ndash;</div>
+            <div id="tn-direct-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          </div>
+          <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel reconnects</div>
+            <div id="tn-reconnects" class="num text-sm font-semibold mt-1">&ndash;</div>
+            <div id="tn-reconnects-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          </div>
+          <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
+            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Connection table</div>
+            <div id="tn-conntrack" class="num text-sm font-semibold mt-1">&ndash;</div>
+            <div id="tn-conntrack-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Latency quality + buffering episodes: side by side so the tab
+           reads in one glance and no panel floats in empty space -->
+      <div class="grid gap-5 lg:grid-cols-2 items-start">
+        <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+              Latency quality &mdash; p50 / p95</span>
+            <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+              <button data-pctrange="24h" class="pctrange-btn px-2.5 py-1 rounded-md">24H</button>
+              <button data-pctrange="7d"  class="pctrange-btn px-2.5 py-1 rounded-md">7D</button>
+            </div>
+          </div>
+          <div id="pct-strip" class="grid gap-3 grid-cols-2"></div>
+          <p class="text-[11px] text-[var(--muted)] mt-3 leading-snug">Half your pings are faster than p50, only 5% worse than p95. The "under load" number is the p95 ping during a full-rate download.</p>
+        </div>
+
+        <!-- Buffering episodes: how many times, when, and why -->
+        <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+              Buffering episodes &mdash; when and why</span>
+            <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+              <button data-incrange="24h" class="incrange-btn px-2.5 py-1 rounded-md">24H</button>
+              <button data-incrange="7d"  class="incrange-btn px-2.5 py-1 rounded-md">7D</button>
+              <button data-incrange="30d" class="incrange-btn px-2.5 py-1 rounded-md">30D</button>
+            </div>
+          </div>
+          <div id="inc-summary" class="text-sm font-semibold"></div>
+          <div id="inc-list" class="mt-3 space-y-1.5 text-[12px]"></div>
+        </div>
+      </div>
+
+      <!-- WAN traffic · 24h: line-level detail belongs here with the other
+           internet-line panels, not at the bottom of the Overview -->
+      <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 mb-6">
+        <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)] mb-2">WAN traffic &middot; 24h</div>
+        <div id="ov-wanchart"></div>
+      </div>
+    </section>
   </main>
 
   <!-- ═══ History modal ════════════════════════════════════════════════════ -->
-  <!-- Clicking the outer fixed overlay (outside the panel) closes the modal. -->
   <div id="chart-modal" style="display:none"
-       class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80">
-    <div class="relative bg-[#0F1B2D] border border-[#3D5070]
-                w-full max-w-4xl mx-2 my-4 flex flex-col"
+       class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="relative bg-[var(--panel)] border border-[var(--line)] rounded-2xl
+                w-full max-w-5xl mx-2 my-4 flex flex-col shadow-2xl"
          style="max-height:92vh;overflow-x:hidden">
       <!-- Modal header -->
-      <div class="flex items-center justify-between px-4 py-2
-                  border-b border-[#3D5070] shrink-0">
-        <span id="modal-title" class="font-bold text-[#5B9BD5] text-sm"></span>
+      <div class="flex items-center justify-between px-5 py-3
+                  border-b border-[var(--line)] shrink-0 gap-3">
+        <span id="modal-title" class="font-bold text-base whitespace-nowrap"></span>
+        <div id="modal-ranges" class="flex items-center gap-1 text-[11px] ml-auto
+                    bg-[var(--panel2)] rounded-lg p-0.5">
+          <button data-range="live" class="range-btn px-2.5 py-1 rounded-md">LIVE</button>
+          <button data-range="1h"  class="range-btn px-2.5 py-1 rounded-md">1H</button>
+          <button data-range="6h"  class="range-btn px-2.5 py-1 rounded-md">6H</button>
+          <button data-range="24h" class="range-btn px-2.5 py-1 rounded-md">24H</button>
+          <button data-range="7d"  class="range-btn px-2.5 py-1 rounded-md">7D</button>
+        </div>
         <button id="modal-close"
-                class="text-[#6B8AB0] px-2 py-1 text-lg leading-none"
+                class="text-[var(--muted)] hover:text-white px-2 py-1 text-lg leading-none"
                 aria-label="Close">&#x2715;</button>
       </div>
       <!-- Chart area -->
-      <div id="modal-charts" class="overflow-y-auto p-4 space-y-2 flex-1"></div>
+      <div id="modal-charts" class="overflow-y-auto scroll-thin p-5 space-y-6 flex-1"></div>
+    </div>
+  </div>
+
+  <!-- ═══ Client drill-down modal ══════════════════════════════════════════ -->
+  <div id="client-modal" style="display:none"
+       class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+    <div class="relative bg-[var(--panel)] border border-[var(--line)] rounded-2xl
+                w-full max-w-5xl mx-2 my-4 flex flex-col shadow-2xl"
+         style="max-height:92vh;overflow-x:hidden">
+      <!-- Modal header -->
+      <div class="flex items-center justify-between px-5 py-3
+                  border-b border-[var(--line)] shrink-0 gap-3 flex-wrap">
+        <div class="min-w-0">
+          <span id="clm-title" class="font-bold text-base whitespace-nowrap"></span>
+          <div id="clm-sub" class="text-[11px] text-[var(--muted)] num mt-0.5"></div>
+        </div>
+        <div id="clm-ranges" class="flex items-center gap-1 text-[11px] ml-auto
+                    bg-[var(--panel2)] rounded-lg p-0.5">
+          <button data-crange="1h"  class="crange-btn px-2.5 py-1 rounded-md">1H</button>
+          <button data-crange="6h"  class="crange-btn px-2.5 py-1 rounded-md">6H</button>
+          <button data-crange="24h" class="crange-btn px-2.5 py-1 rounded-md">24H</button>
+          <button data-crange="7d"  class="crange-btn px-2.5 py-1 rounded-md">7D</button>
+        </div>
+        <button id="clm-close"
+                class="text-[var(--muted)] hover:text-white px-2 py-1 text-lg leading-none"
+                aria-label="Close">&#x2715;</button>
+      </div>
+      <!-- Window totals -->
+      <div class="px-5 pt-3 flex gap-6 text-xs shrink-0">
+        <div><span class="text-[var(--muted)]">&#9660; downloaded</span>
+          <span id="clm-rx" class="num font-bold text-[var(--green)] ml-1.5">&ndash;</span></div>
+        <div><span class="text-[var(--muted)]">&#9650; uploaded</span>
+          <span id="clm-tx" class="num font-bold text-[var(--blue)] ml-1.5">&ndash;</span></div>
+      </div>
+      <!-- Chart area -->
+      <div id="clm-charts" class="overflow-y-auto scroll-thin p-5 space-y-6 flex-1"></div>
     </div>
   </div>
 
@@ -90,12 +428,19 @@
 
     // ── DOM refs ──────────────────────────────────────────────────────────
     const appEl         = document.getElementById('app');
+    const ifacesEl      = document.getElementById('ifaces');
     const msgEl         = document.getElementById('msg');
     const ifaceCountEl  = document.getElementById('iface-count');
     const connStatusEl  = document.getElementById('conn-status');
     const lastUpdatedEl = document.getElementById('last-updated');
 
     // ── Formatting helpers ────────────────────────────────────────────────
+
+    /** Resolve a CSS custom property to its current color value (theme-aware
+     *  chart strokes). */
+    function cv(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#8FA3BF';
+    }
 
     /** Safely escape HTML to prevent XSS. */
     function h(s) {
@@ -105,6 +450,15 @@
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+    }
+
+    /** Format bytes/s as bits/s with a sensible unit. */
+    function fmtBits(bytesPerSec) {
+      const b = Number(bytesPerSec) * 8;
+      if (b >= 1e9) return (b / 1e9).toFixed(2) + ' Gbps';
+      if (b >= 1e6) return (b / 1e6).toFixed(1) + ' Mbps';
+      if (b >= 1e3) return (b / 1e3).toFixed(0) + ' kbps';
+      return b.toFixed(0) + ' bps';
     }
 
     /** Format byte counts with SI prefix. */
@@ -124,7 +478,7 @@
 
     /** Colour class: green if zero, red otherwise (for drop/error counters). */
     function dropCls(n) {
-      return Number(n) === 0 ? 'text-[#4DB38A]' : 'text-[#E07070]';
+      return Number(n) === 0 ? 'text-[var(--green)]' : 'text-[var(--red)]';
     }
 
     /** Format an ISO-8601 timestamp to HH:MM:SS local time. */
@@ -145,6 +499,22 @@
       const trimmed = pathname.replace(/\/+$/, '');
       const base = trimmed === '' ? '/' : trimmed + '/';
       return new URL(path.replace(/^\//, ''), window.location.origin + base).toString();
+    }
+
+    /** Parse "415Mbit" / "1Gbit" / "100Kbit" into bits/s. */
+    function parseBandwidth(s) {
+      const m = /^([\d.]+)(K|M|G)(bit|bps)/.exec(s || '');
+      if (!m) return 0;
+      const mult = m[2] === 'K' ? 1e3 : m[2] === 'M' ? 1e6 : 1e9;
+      return parseFloat(m[1]) * mult;
+    }
+
+    /** Format a tc memory string like "4674624b" or "15140Kb" as bytes. */
+    function fmtTcBytes(s) {
+      const m = /^([\d.]+)([KMGT]?)b$/.exec(s || '');
+      if (!m) return String(s || '');
+      const mult = { '': 1, K: 1e3, M: 1e6, G: 1e9, T: 1e12 }[m[2]] || 1;
+      return fmtBytes(parseFloat(m[1]) * mult);
     }
 
     // ── History buffer (client-side ring) ─────────────────────────────────
@@ -187,18 +557,18 @@
           ['t', 'tx', 'av', 'pk', 'dr'].forEach(k => {
             if (b[k].length > HIST_CAP) b[k] = b[k].slice(-HIST_CAP);
           });
-          redrawSparklines(name);
+          redrawKPIs(name);
         });
       } catch (e) {
         console.warn('[cake-stats] history seed failed', e);
       }
     }
 
-    // ── Sparklines ────────────────────────────────────────────────────────
+    // ── KPI cards + sparklines ─────────────────────────────────────────────
 
     /**
      * Render data as a pure-SVG polyline into svg (an <svg> element).
-     * The viewBox is 100x28; path is normalised to fill height.
+     * Stretches to the card width via preserveAspectRatio=none.
      */
     function drawSparkline(svg, data, color) {
       if (!svg) return;
@@ -214,74 +584,104 @@
       }).join(' ');
       svg.innerHTML =
         '<polyline points="' + pts + '" fill="none" stroke="' + color +
-        '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>';
+        '" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" ' +
+        'vector-effect="non-scaling-stroke"/>';
     }
 
-    /** Return the stable sparkline bar HTML string for one interface. */
-    function buildSparkbarHTML(name) {
-      const n = h(name);
+    /** One KPI card: label, big value, sub-line, optional progress bar, optional sparkline. */
+    function kpiCard(id, label, dotColor, opts) {
+      opts = opts || {};
+      const barHTML = opts.bar
+        ? '<div class="h-1.5 rounded bg-[var(--line)]/60 mt-2 overflow-hidden">' +
+          '<div id="kpi-' + id + '-bar" class="h-full rounded" style="width:0%;background:var(--green)"></div></div>'
+        : '';
+      const sparkHTML = opts.spark === false ? '' :
+        '<svg id="spk-' + id + '" width="100%" height="30" viewBox="0 0 100 28" ' +
+        'preserveAspectRatio="none" class="overflow-visible mt-1"></svg>';
       return (
-        '<div class="sparkline-bar px-4 py-2 border-b border-[#3D5070]' +
-        ' flex flex-wrap items-center gap-x-4 gap-y-1 cursor-pointer select-none"' +
-        ' data-sparkbar="' + n + '">' +
-        // TX throughput
-        '<div class="flex items-center gap-1.5 min-w-0">' +
-          '<span class="text-[#6B8AB0] text-[10px] w-12 shrink-0">TX</span>' +
-          '<svg id="spk-tx-' + n + '" width="100" height="28" viewBox="0 0 100 28"' +
-              ' class="overflow-visible shrink-0"></svg>' +
-          '<span id="spk-tx-val-' + n + '"' +
-              ' class="text-[#4DB38A] text-[10px] w-20 tabular-nums text-right shrink-0 truncate overflow-hidden"></span>' +
-        '</div>' +
-        // Avg latency
-        '<div class="flex items-center gap-1.5 min-w-0">' +
-          '<span class="text-[#6B8AB0] text-[10px] w-14 shrink-0">LATENCY</span>' +
-          '<svg id="spk-av-' + n + '" width="100" height="28" viewBox="0 0 100 28"' +
-              ' class="overflow-visible shrink-0"></svg>' +
-          '<span id="spk-av-val-' + n + '"' +
-              ' class="text-[#5B9BD5] text-[10px] w-20 tabular-nums text-right shrink-0 truncate overflow-hidden"></span>' +
-        '</div>' +
-        // Drops/s
-        '<div class="flex items-center gap-1.5 min-w-0">' +
-          '<span class="text-[#6B8AB0] text-[10px] w-14 shrink-0">DROPS/s</span>' +
-          '<svg id="spk-dr-' + n + '" width="100" height="28" viewBox="0 0 100 28"' +
-              ' class="overflow-visible shrink-0"></svg>' +
-          '<span id="spk-dr-val-' + n + '"' +
-              ' class="text-[#4DB38A] text-[10px] w-20 tabular-nums text-right shrink-0 truncate overflow-hidden"></span>' +
-        '</div>' +
-        '<span class="text-[#3D5070] text-[10px] ml-auto hidden sm:inline">' +
-          'tap for full chart &#9658;</span>' +
+        '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2 flex flex-col">' +
+          '<div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
+            '<span class="w-1.5 h-1.5 rounded-full" style="background:' + dotColor + '"></span>' + label +
+          '</div>' +
+          '<div id="kpi-' + id + '" class="num display text-2xl font-bold mt-1 leading-tight">&ndash;</div>' +
+          '<div id="kpi-' + id + '-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>' +
+          barHTML + sparkHTML +
         '</div>'
       );
     }
 
-    /** Redraw all three sparklines for an interface and update current-value labels. */
-    function redrawSparklines(name) {
+    /** Return the stable KPI row HTML string for one interface. */
+    function buildKPIRowHTML(name) {
+      const n = h(name);
+      return (
+        '<div class="px-4 py-3 border-b border-[var(--line)] cursor-pointer select-none ' +
+                    'hover:bg-[var(--panel2)]/40" data-sparkbar="' + n + '" ' +
+              'title="Tap for detailed charts">' +
+          '<div class="grid gap-3 grid-cols-2 lg:grid-cols-4">' +
+            kpiCard('tx-' + n, 'Throughput', 'var(--green)', { bar: true }) +
+            kpiCard('lat-' + n, 'Waiting time', 'var(--blue)') +
+            kpiCard('dr-' + n, 'Drops', 'var(--red)') +
+            kpiCard('bl-' + n, 'Waiting packets', 'var(--amber)', { spark: false }) +
+          '</div>' +
+          '<div class="text-[10px] text-[var(--faint)] mt-2 text-right hidden sm:block">' +
+            'tap anywhere in this row for detailed charts &#9658;</div>' +
+        '</div>'
+      );
+    }
+
+    /** Redraw all sparklines and KPI values for an interface. */
+    function redrawKPIs(name) {
       const buf = histBuf[name];
       if (!buf) return;
 
       const lastTx = buf.tx[buf.tx.length - 1] || 0;
       const lastAv = buf.av[buf.av.length - 1] || 0;
+      const lastPk = buf.pk[buf.pk.length - 1] || 0;
       const lastDr = buf.dr[buf.dr.length - 1] || 0;
 
-      drawSparkline(document.getElementById('spk-tx-' + name), buf.tx, '#4DB38A');
-      drawSparkline(document.getElementById('spk-av-' + name), buf.av, '#5B9BD5');
+      drawSparkline(document.getElementById('spk-tx-' + name), buf.tx, 'var(--green)');
+      drawSparkline(document.getElementById('spk-lat-' + name), buf.av, 'var(--blue)');
       drawSparkline(
         document.getElementById('spk-dr-' + name),
         buf.dr,
-        lastDr > 0 ? '#E07070' : '#4DB38A',
+        lastDr > 0 ? 'var(--red)' : 'var(--green)',
       );
 
-      const txEl = document.getElementById('spk-tx-val-' + name);
-      const avEl = document.getElementById('spk-av-val-' + name);
-      const drEl = document.getElementById('spk-dr-val-' + name);
+      const txEl  = document.getElementById('kpi-tx-' + name);
+      const latEl = document.getElementById('kpi-lat-' + name);
+      const drEl  = document.getElementById('kpi-dr-' + name);
 
-      if (txEl) txEl.textContent = fmtBytes(lastTx) + '/s';
-      if (avEl) avEl.textContent = lastAv.toFixed(2) + ' ms';
+      if (txEl) txEl.textContent = fmtBits(lastTx);
+      if (latEl) latEl.textContent = lastPk.toFixed(2) + ' ms';
       if (drEl) {
         drEl.textContent = lastDr.toFixed(2) + '/s';
-        drEl.className   =
-          'text-[10px] w-20 tabular-nums text-right shrink-0 ' +
-          (lastDr > 0 ? 'text-[#E07070]' : 'text-[#4DB38A]');
+        drEl.className = 'num text-2xl font-bold mt-1 leading-tight ' +
+          (lastDr > 0 ? 'text-[var(--red)]' : '');
+      }
+      const latSub = document.getElementById('kpi-lat-' + name + '-sub');
+      if (latSub) latSub.textContent = 'avg ' + lastAv.toFixed(2) + ' ms · peak ' + lastPk.toFixed(2) + ' ms';
+      const drSub = document.getElementById('kpi-dr-' + name + '-sub');
+      if (drSub) drSub.textContent = lastDr > 0 ? 'packets being dropped' : 'no drops recently';
+    }
+
+    /** Update the throughput utilisation bar (needs live cs payload). */
+    function updateThroughputContext(name, cs) {
+      const bar = document.getElementById('kpi-tx-' + name + '-bar');
+      const sub = document.getElementById('kpi-tx-' + name + '-sub');
+      const bw  = parseBandwidth(cs.bandwidth);
+      const tx  = cs.tx_bytes_per_s || 0;
+      if (!sub) return;
+      if (bw > 0 && tx >= 0) {
+        const pct = Math.min(100, (tx * 8 / bw) * 100);
+        if (bar) {
+          bar.style.width = pct.toFixed(1) + '%';
+          bar.style.background = pct >= 92 ? 'var(--amber)' : pct >= 75 ? 'var(--blue)' : 'var(--green)';
+        }
+        // parseBandwidth already returns bits/s; fmtBits expects bytes/s.
+        sub.textContent = pct.toFixed(0) + '% of shaped ' + fmtBits(bw / 8);
+      } else {
+        if (bar) bar.style.width = '0%';
+        sub.textContent = 'shaped ' + h(cs.bandwidth || '');
       }
     }
 
@@ -295,16 +695,20 @@
     let modalIface = null;
     let modalPlots = [];        // { u: uPlot }
     let modalResizeObserver = null;
+    let modalRange = 'live';    // 'live' = server ring buffer, else VM range key
+    let vmRefreshTimer = null;
 
-    /** Available chart width = container client width minus p-4 (16px) on each side. */
+    /** Available chart width = container client width minus p-5 (20px) on each side. */
     function _chartWidth(cd) {
-      return Math.max(200, (cd.clientWidth || 300) - 32);
+      return Math.max(200, (cd.clientWidth || 300) - 40);
     }
 
     function openModal(name) {
       modalIface = name;
+      modalRange = 'live';
+      _setRangeButtons();
       const titleEl = document.getElementById('modal-title');
-      if (titleEl) titleEl.textContent = name + '  \u00b7  history';
+      if (titleEl) titleEl.textContent = name + ' \u00b7 detailed history';
       document.getElementById('chart-modal').style.display = 'flex';
       _destroyModalPlots();
       // Defer chart build so the modal is fully laid out and clientWidth is correct.
@@ -313,6 +717,8 @@
 
     function closeModal() {
       modalIface = null;
+      if (vmRefreshTimer) { clearInterval(vmRefreshTimer); vmRefreshTimer = null; }
+      modalRange = 'live';
       _destroyModalPlots();
       document.getElementById('chart-modal').style.display = 'none';
       const cd = document.getElementById('modal-charts');
@@ -336,69 +742,84 @@
       return typeof uPlot !== 'undefined';
     }
 
+    /** Resolve a CSS custom property to a concrete color for canvas drawing. */
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
     /**
      * Build one uPlot chart inside container and return the uPlot instance.
-     * series: [{ label, data, stroke }]
+     * series: [{ label, data, stroke, fill }]
      * yFmt:   value => display string for y-axis labels
      */
-    function makeChart(container, W, H, times, series, title, yFmt) {
+    function makeChart(container, W, H, times, series, title, yFmt, syncKey) {
       const wrap = document.createElement('div');
-      wrap.className = 'mb-8';
+      wrap.className = 'mb-2';
 
       const lbl = document.createElement('div');
-      lbl.className = 'text-[10px] text-[#6B8AB0] mb-1 uppercase tracking-widest';
+      lbl.className = 'text-[11px] font-semibold text-[var(--muted)] mb-1 uppercase tracking-widest';
       lbl.textContent = title;
       wrap.appendChild(lbl);
 
       const chartWrap = document.createElement('div');
-      chartWrap.style.background = '#0F1B2D';
       wrap.appendChild(chartWrap);
       container.appendChild(wrap);
 
       const opts = {
         width:  W,
         height: H,
-        cursor: { show: false },
+        cursor: {
+          x: true, y: false,
+          sync: syncKey ? { key: syncKey, scales: ['x'] } : undefined,
+        },
         select: { show: false },
-        legend: { show: series.length > 1, live: false },
+        legend: { show: series.length > 1, live: true },
         series: [
           {},   // x — timestamps
           ...series.map(s => ({
             label:    s.label,
             stroke:   s.stroke,
-            width:    1.5,
+            fill:     s.fill,
+            width:    2,
             spanGaps: true,
             points:   { show: false },
           })),
         ],
         axes: [
           {
-            stroke: '#8AABCC',
-            grid:   { stroke: '#1E2D47', width: 1 },
-            ticks:  { stroke: '#3D5070', width: 1 },
-            font:   '11px JetBrains Mono, monospace',
-            size:   60,
-            // Custom time formatter: show HH:MM at minute boundaries,
-            // "Xs" (e.g. "20s") for sub-minute ticks so users can't
-            // mistake seconds for minutes.
+            stroke: cssVar('--muted'),
+            grid:   { stroke: cssVar('--panel2'), width: 1 },
+            ticks:  { stroke: cssVar('--line'), width: 1 },
+            font:   '11px Fira Code, monospace',
+            // Custom time formatter: HH:MM at minute boundaries,
+            // "Xs" for sub-minute ticks — but only when the visible span
+            // is short; in wide ranges sub-minute ticks just read as noise.
             values: (u, splits) => splits.map(v => {
               if (v == null) return '';
               const d = new Date(v * 1000);
               const s = d.getSeconds();
               if (s === 0) {
-                return d.toLocaleTimeString([], {
-                  hour: '2-digit', minute: '2-digit', hour12: false,
-                });
+                const day = d.getDate() !== new Date().getDate();
+                // a different day shows just the date at the day boundary;
+                // other ticks stay HH:MM so labels don't repeat the date
+                if (day) {
+                  if (d.getHours() === 0 && d.getMinutes() === 0) {
+                    return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+                  }
+                  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                }
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
               }
-              return s + 's';
+              const span = u.scales.x.max - u.scales.x.min;
+              return span > 1800 ? '' : s + 's';
             }),
           },
           {
-            stroke: '#8AABCC',
-            grid:   { stroke: '#1E2D47', width: 1 },
-            ticks:  { stroke: '#3D5070', width: 1 },
-            font:   '11px JetBrains Mono, monospace',
-            size:   96,
+            stroke: cssVar('--muted'),
+            grid:   { stroke: cssVar('--panel2'), width: 1 },
+            ticks:  { stroke: cssVar('--line'), width: 1 },
+            font:   '11px Fira Code, monospace',
+            size:   88,
             values: (u, ticks) => ticks.map(v => (v != null ? yFmt(v) : '')),
           },
         ],
@@ -414,60 +835,132 @@
       const cd = document.getElementById('modal-charts');
       if (!cd || !modalIface) return;
 
+      if (modalRange !== 'live') { _buildModalChartsVM(name); return; }
+
       _destroyModalPlots();
 
       const buf = histBuf[name];
       if (!buf || buf.t.length < 2) {
         cd.innerHTML =
-          '<p class="text-[#6B8AB0] text-center py-8 text-sm">' +
+          '<p class="text-[var(--muted)] text-center py-10 text-sm">' +
           'Not enough history yet \u2014 wait a few seconds.</p>';
         return;
       }
 
       if (!isUPlotReady()) {
         cd.innerHTML =
-          '<p class="text-[#6B8AB0] text-center py-8 text-sm">' +
+          '<p class="text-[var(--muted)] text-center py-10 text-sm">' +
           'Chart library not loaded \u2014 check internet access.</p>';
         return;
       }
 
       cd.innerHTML = '';
       const W = _chartWidth(cd);
-      const H = 120;
+      const H = 150;
 
-      // Observe container width changes (orientation flip, keyboard, etc.) and
-      // resize all uPlot instances to match so no horizontal scroll appears.
+      // Observe container width changes and resize all uPlot instances so no
+      // horizontal scroll appears.
       if (typeof ResizeObserver !== 'undefined') {
         modalResizeObserver = new ResizeObserver(() => _resizeModalPlots());
         modalResizeObserver.observe(cd);
       }
 
       modalPlots.push({ u: makeChart(cd, W, H, buf.t,
-        [{ label: 'TX', data: buf.tx, stroke: '#4DB38A' }],
-        'TX Throughput',
-        v => fmtBytes(v) + '/s'), seriesCount: 1 });
+        [{ label: 'Upload (TX)', data: buf.tx, stroke: cv('--green'), fill: 'rgba(74,222,128,0.12)' }],
+        'Throughput', v => fmtBits(v), 'modal-x') });
 
       modalPlots.push({ u: makeChart(cd, W, H, buf.t,
         [
-          { label: 'avg latency', data: buf.av, stroke: '#5B9BD5' },
-          { label: 'peak latency', data: buf.pk, stroke: '#E07070' },
+          { label: 'avg wait', data: buf.av, stroke: cv('--muted') },
+          { label: 'peak wait', data: buf.pk, stroke: cv('--red') },
         ],
-        'Latency (ms)',
-        v => v.toFixed(2) + ' ms'), seriesCount: 2 });
+        'Waiting time in queue (ms)',
+        v => v.toFixed(2) + ' ms', 'modal-x') });
 
       modalPlots.push({ u: makeChart(cd, W, H, buf.t,
-        [{ label: 'drops/s', data: buf.dr, stroke: '#E07070' }],
+        [{ label: 'drops/s', data: buf.dr, stroke: cv('--red'), fill: 'rgba(248,113,113,0.12)' }],
         'Drops / sec',
-        v => v.toFixed(2)), seriesCount: 1 });
+        v => v.toFixed(2), 'modal-x') });
+    }
+
+    /** Build the modal charts from /api/history/vm for the selected range. */
+    async function _buildModalChartsVM(name) {
+      const cd = document.getElementById('modal-charts');
+      if (!cd) return;
+      _destroyModalPlots();
+      if (vmRefreshTimer) { clearInterval(vmRefreshTimer); vmRefreshTimer = null; }
+
+      cd.innerHTML = '<p class="text-[var(--muted)] text-center py-10 text-sm">' +
+        'Loading ' + h(modalRange) + ' history from VictoriaMetrics\u2026</p>';
+      let data;
+      try {
+        const r = await fetch(appURL('/api/history/vm?range=' + encodeURIComponent(modalRange)));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        data = await r.json();
+      } catch (e) {
+        cd.innerHTML = '<p class="text-[var(--red)] text-center py-10 text-sm">' +
+          'Failed to load history: ' + h(String(e)) + '</p>';
+        return;
+      }
+
+      const buf = data && data[name];
+      if (!buf || buf.length < 2) {
+        cd.innerHTML = '<p class="text-[var(--muted)] text-center py-10 text-sm">' +
+          'No ' + h(modalRange) + ' history for ' + h(name) + ' yet.</p>';
+        return;
+      }
+
+      cd.innerHTML = '';
+      const W = _chartWidth(cd);
+      const H = 150;
+
+      if (typeof ResizeObserver !== 'undefined') {
+        modalResizeObserver = new ResizeObserver(() => _resizeModalPlots());
+        modalResizeObserver.observe(cd);
+      }
+
+      const t  = buf.map(s => s.t);
+      const tx = buf.map(s => s.tx);
+      const av = buf.map(s => s.av);
+      const pk = buf.map(s => s.pk);
+      const dr = buf.map(s => s.dr);
+
+      modalPlots.push({ u: makeChart(cd, W, H, t,
+        [{ label: 'Traffic (TX)', data: tx, stroke: cv('--green'), fill: 'rgba(74,222,128,0.12)' }],
+        'Throughput', v => fmtBits(v), 'modal-x') });
+
+      modalPlots.push({ u: makeChart(cd, W, H, t,
+        [
+          { label: 'avg wait', data: av, stroke: cv('--muted') },
+          { label: 'peak wait', data: pk, stroke: cv('--red') },
+        ],
+        'Waiting time in queue (ms)', v => v.toFixed(2) + ' ms', 'modal-x') });
+
+      modalPlots.push({ u: makeChart(cd, W, H, t,
+        [{ label: 'drops/s', data: dr, stroke: cv('--red'), fill: 'rgba(248,113,113,0.12)' }],
+        'Drops / sec', v => v.toFixed(2), 'modal-x') });
+
+      // Refresh quietly every 60 s while this VM view is open.
+      vmRefreshTimer = setInterval(() => {
+        if (modalIface && modalRange !== 'live') _buildModalChartsVM(modalIface);
+      }, 60000);
+    }
+
+    function _setRangeButtons() {
+      document.querySelectorAll('#modal-ranges .range-btn').forEach(b => {
+        const active = b.dataset.range === modalRange;
+        b.className = 'range-btn px-2.5 py-1 rounded-md font-semibold ' + (active
+          ? 'bg-[var(--blue)] text-[var(--accent-text)]'
+          : 'text-[var(--muted)] hover:text-white');
+      });
     }
 
     /**
      * Live update: push new data into existing uPlot instances without
-     * destroying/recreating the chart DOM.  Falls back to a full rebuild
-     * if the instances don't exist yet (e.g. first tick while modal opens).
+     * destroying/recreating the chart DOM.
      */
     function updateModalCharts(name) {
-      if (!modalIface) return;
+      if (!modalIface || modalRange !== 'live') return;
       const buf = histBuf[name];
       if (!buf || buf.t.length < 2) return;
 
@@ -489,22 +982,35 @@
       });
     }
 
-    // ── Event delegation (sparkbar tap + modal close) ─────────────────────
+    // ── Event delegation (sparkbar tap + modal close + range) ─────────────
 
     document.addEventListener('click', function (e) {
-      // Sparkline bar → open modal
+      // KPI row → open modal
       const bar = e.target.closest('[data-sparkbar]');
       if (bar) { openModal(bar.dataset.sparkbar); return; }
+
+      // Range buttons inside the modal
+      const rbtn = e.target.closest('.range-btn');
+      if (rbtn && modalIface) {
+        modalRange = rbtn.dataset.range;
+        _setRangeButtons();
+        requestAnimationFrame(() => _buildModalCharts(modalIface));
+        return;
+      }
 
       // Close button
       if (e.target.id === 'modal-close') { closeModal(); return; }
 
-      // Click on the backdrop (the inner absolute div that covers inset-0)
+      // Click on the backdrop (the outer overlay)
       if (e.target.id === 'chart-modal') { closeModal(); return; }
+
+      // Client modal close
+      if (e.target.id === 'clm-close') { closeClientModal(); return; }
+      if (e.target.id === 'client-modal') { closeClientModal(); return; }
     });
 
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape') closeModal();
+      if (e.key === 'Escape') { closeModal(); closeClientModal(); }
     });
 
     // ── Tier-table field groups ───────────────────────────────────────────
@@ -556,19 +1062,19 @@
       FIELD_GROUPS.forEach(([groupLabel, fields]) => {
         fields.forEach(([, label, fmt], fi) => {
           const isFirst   = fi === 0;
-          const topBorder = isFirst ? 'border-t-2 border-t-[#5B9BD5]' : '';
+          const topBorder = isFirst ? 'border-t-2 border-t-[var(--blue)]' : '';
           const groupTag  = isFirst
-            ? `<span class="block text-[10px] text-[#5B9BD5] leading-tight mb-0.5">${h(groupLabel)}</span>`
+            ? `<span class="block text-[10px] text-[var(--blue)] leading-tight mb-0.5 font-semibold">${h(groupLabel)}</span>`
             : '';
 
           const valueCells = tiers
-            .map(t => `<td class="px-3 py-1 border border-[#3D5070] text-right tabular-nums ${topBorder}">${fmt(t)}</td>`)
+            .map(t => `<td class="px-3 py-1 border border-[var(--line)] text-right num ${topBorder}">${fmt(t)}</td>`)
             .join('');
 
           rows += `
             <tr>
-              <td class="sticky-col px-3 py-1 border border-[#3D5070] bg-[#1E2D47]
-                         text-[#8AABCC] font-medium whitespace-nowrap ${topBorder}">
+              <td class="sticky-col px-3 py-1 border border-[var(--line)] bg-[var(--panel2)]
+                         text-[var(--muted)] font-medium whitespace-nowrap ${topBorder}">
                 ${groupTag}${h(label)}
               </td>
               ${valueCells}
@@ -577,81 +1083,92 @@
       });
 
       const tierHeaders = tiers
-        .map(t => `<th class="px-3 py-1.5 border border-[#3D5070] bg-[#162238]
-                               text-[#8AABCC] font-semibold text-right whitespace-nowrap">${h(t.name)}</th>`)
+        .map(t => `<th class="px-3 py-1.5 border border-[var(--line)] bg-[var(--panel2)]
+                               text-[var(--text)] font-semibold text-right whitespace-nowrap num">${h(t.name)}</th>`)
         .join('');
 
       return `
-        <div class="overflow-x-auto scroll-thin">
+        <div class="overflow-x-auto scroll-thin rounded-lg border border-[var(--line)]">
           <table class="w-full border-collapse text-xs" style="min-width:${minW}px">
             <thead>
               <tr>
-                <th class="sticky-col px-3 py-1.5 border border-[#3D5070] bg-[#0F1B2D]
-                            text-[#5B9BD5] font-semibold text-left whitespace-nowrap w-28">Field</th>
+                <th class="sticky-col px-3 py-1.5 border border-[var(--line)] bg-[var(--head)]
+                            text-[var(--blue)] font-semibold text-left whitespace-nowrap w-28">Field</th>
                 ${tierHeaders}
               </tr>
             </thead>
-            <tbody class="bg-[#1E2D47]">${rows}</tbody>
+            <tbody class="bg-[var(--panel)]">${rows}</tbody>
           </table>
         </div>`;
     }
 
     function buildIfaceHTML(cs) {
-      const dir    = cs.direction === 'ingress' ? 'INGRESS' : 'EGRESS';
-      const dirCls = cs.direction === 'ingress' ? 'text-[#5B9BD5]' : 'text-[#4DB38A]';
-
       const metaParts = [
-        cs.bandwidth     && `<span class="text-[#6B8AB0]">bw</span> <span>${h(cs.bandwidth)}</span>`,
-        cs.diffserv_mode && `<span class="text-[#6B8AB0]">mode</span> <span>${h(cs.diffserv_mode)}</span>`,
-        cs.rtt           && `<span class="text-[#6B8AB0]">rtt</span> <span>${h(cs.rtt)}</span>`,
-        cs.overhead      && `<span class="text-[#6B8AB0]">overhead</span> <span>${h(cs.overhead)}</span>`,
-        cs.mpu           && `<span class="text-[#6B8AB0]">mpu</span> <span>${h(cs.mpu)}</span>`,
-        cs.dual_mode     && `<span>${h(cs.dual_mode)}</span>`,
+        cs.bandwidth     && `<span>shaped <span class="num text-[var(--text)]">${h(cs.bandwidth)}</span></span>`,
+        cs.diffserv_mode && `<span>${h(cs.diffserv_mode)}</span>`,
+        cs.rtt           && `<span>rtt <span class="num">${h(cs.rtt)}</span></span>`,
         `<span>${cs.nat_enabled ? 'nat' : 'nonat'}</span>`,
         `<span>${cs.wash_enabled ? 'wash' : 'nowash'}</span>`,
-        cs.atm_mode      && `<span>${h(cs.atm_mode)}</span>`,
-        cs.memlimit      && `<span class="text-[#6B8AB0]">memlimit</span> <span>${h(cs.memlimit)}</span>`,
-      ].filter(Boolean).join('<span class="text-[#3D5070] mx-1">\u00b7</span>');
+        cs.overhead      && `<span>overhead <span class="num">${h(cs.overhead)}</span></span>`,
+        cs.dual_mode     && `<span>${h(cs.dual_mode)}</span>`,
+      ].filter(Boolean).join('<span class="text-[var(--line)] mx-1.5">\u00b7</span>');
 
-      const statBox = (label, val, cls = '') =>
-        `<div><span class="text-[#6B8AB0]">${label} </span><span class="${cls || 'text-white'}">${val}</span></div>`;
+      const statRow = (label, val, cls = '') =>
+        `<div class="flex flex-col gap-0.5"><span class="text-[10px] uppercase tracking-widest text-[var(--muted)]">${label}</span>` +
+        `<span class="num text-sm ${cls || ''}">${val}</span></div>`;
 
-      const globalGrid = `
-        <div class="px-4 py-2 border-b border-[#3D5070]
-                    grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-8 gap-y-1 text-xs">
-          ${statBox('sent',       fmtBytes(cs.sent_bytes))}
-          ${statBox('pkts',       fmtNum(cs.sent_pkts))}
-          ${statBox('dropped',    fmtNum(cs.dropped),    dropCls(cs.dropped))}
-          ${statBox('overlimits', fmtNum(cs.overlimits))}
-          ${statBox('requeues',   fmtNum(cs.requeues))}
-          ${statBox('backlog',    h(cs.backlog_bytes || '0b') + ' / ' + fmtNum(cs.backlog_pkts) + 'p')}
-          ${cs.memory_used     ? statBox('memory', h(cs.memory_used) + '<span class="text-[#6B8AB0]"> of </span>' + h(cs.memory_total)) : ''}
-          ${cs.capacity_estimate ? statBox('capacity', h(cs.capacity_estimate)) : ''}
-          ${cs.min_net_size    ? statBox('net size', h(cs.min_net_size) + '<span class="text-[#6B8AB0]"> \u2013 </span>' + h(cs.max_net_size)) : ''}
-          ${cs.min_adj_size    ? statBox('adj size', h(cs.min_adj_size) + '<span class="text-[#6B8AB0]"> \u2013 </span>' + h(cs.max_adj_size)) : ''}
-          ${cs.avg_hdr_offset  ? statBox('hdr offset', h(cs.avg_hdr_offset)) : ''}
+      const detailsGrid = `
+        <div class="px-5 py-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3">
+          ${statRow('total sent',    fmtBytes(cs.sent_bytes))}
+          ${statRow('total packets', fmtNum(cs.sent_pkts))}
+          ${statRow('dropped total', fmtNum(cs.dropped),    dropCls(cs.dropped))}
+          ${statRow('overlimits',    fmtNum(cs.overlimits))}
+          ${statRow('requeues',      fmtNum(cs.requeues))}
+          ${cs.memory_used       ? statRow('qdisc memory', h(cs.memory_used) + ' / ' + h(cs.memory_total)) : ''}
+          ${cs.capacity_estimate ? statRow('capacity',     h(cs.capacity_estimate)) : ''}
+          ${cs.min_net_size      ? statRow('packet size',  h(cs.min_net_size) + ' \u2013 ' + h(cs.max_net_size) + ' B') : ''}
+          ${cs.backlog_bytes     ? statRow('backlog now',  h(cs.backlog_bytes) + ' / ' + fmtNum(cs.backlog_pkts) + 'p') : ''}
         </div>`;
 
       return `
-        <div class="bg-[#162238] px-4 py-2 border-b border-[#3D5070]
-                    flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span class="font-bold text-white text-base">${h(cs.interface)}</span>
-          <span class="${dirCls} text-xs font-semibold">[${dir}]</span>
-          <span class="text-xs text-[#8AABCC] flex flex-wrap gap-x-2">${metaParts}</span>
-        </div>
-        ${globalGrid}
-        ${buildTierTable(cs.tiers)}`;
+        <details>
+          <summary class="px-5 py-2.5 flex items-center gap-2 text-xs text-[var(--muted)] hover:text-white
+                          border-t border-[var(--line)]">
+            <span class="chev text-[10px]">&#9654;</span>
+            Advanced details <span class="text-[var(--faint)]">\u2014 raw counters &amp; per-tin CAKE state</span>
+          </summary>
+          <div class="px-5 pb-4 space-y-3">
+            ${detailsGrid}
+            ${buildTierTable(cs.tiers)}
+          </div>
+        </details>`;
     }
 
     // ── DOM update strategy ───────────────────────────────────────────────
     // Each interface card has two children:
-    //   [0] sparkbar  — created once, never replaced (holds live SVG sparklines)
+    //   [0] KPI row — created once, never replaced (holds live SVG sparklines)
     //   [1] .iface-content — innerHTML swapped every poll cycle
 
     let rendered = new Set();
 
     function handleData(payload) {
       const ifaces = Array.isArray(payload.interfaces) ? payload.interfaces : [];
+      latestIfaces = ifaces; // overview hero reads the live snapshot
+      // Keep the exit-paths strip's direct-line card in step with the SSE
+      // snapshot; lastTunnel carries the rates from the last /api/tunnel poll.
+      if (document.getElementById('tn-direct') && lastTunnel && lastTunnel.rates_ok) {
+        if (lastTunnel.available) {
+          // Traffic card re-renders from the last tunnel poll too, so both
+          // cards move at the poller's cadence instead of the 30 s UI timer.
+          document.getElementById('tn-traffic').textContent =
+            fmtBits(lastTunnel.rx_per_s) + ' \u25BC / ' + fmtBits(lastTunnel.tx_per_s) + ' \u25B0';
+          fillDirectCard(Math.max(0, wanDown() - lastTunnel.rx_per_s),
+            Math.max(0, wanUp() - lastTunnel.tx_per_s),
+            'native traffic bypassing the tunnel (approximate: WAN minus tunnel)');
+        } else {
+          fillDirectCard(wanDown(), wanUp(), 'everything is on the direct line right now');
+        }
+      }
       const t      = Math.round(Date.parse(payload.updated_at) / 1000) ||
                      Math.round(Date.now() / 1000);
 
@@ -689,29 +1206,41 @@
         if (!card) {
           card = document.createElement('div');
           card.id        = divId;
-          card.className = 'bg-[#1E2D47] border border-[#3D5070] overflow-hidden';
+          card.className = 'bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden';
           rendered.add(divId);
 
-          // ── Sparkbar: created once, stable ──────────────────────────
+          // ── Interface header ──────────────────────────────────────────
+          const head = document.createElement('div');
+          const dir    = cs.direction === 'ingress' ? 'DOWNLOAD' : 'UPLOAD';
+          const dirCls = cs.direction === 'ingress' ? 'text-[var(--blue)]' : 'text-[var(--green)]';
+          head.className = 'px-5 pt-4 pb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1';
+          head.innerHTML =
+            `<span class="font-bold text-lg">${h(cs.interface)}</span>` +
+            `<span class="${dirCls} text-xs font-bold tracking-widest">${dir}</span>` +
+            `<span class="text-xs text-[var(--muted)] flex flex-wrap gap-x-2 items-baseline">` +
+              (cs.bandwidth ? `shaped <span class="num text-[var(--text)]">${h(cs.bandwidth)}</span>` : '') +
+              (cs.diffserv_mode ? `<span class="text-[var(--line)]">\u00b7</span> ${h(cs.diffserv_mode)}` : '') +
+              (cs.rtt ? `<span class="text-[var(--line)]">\u00b7</span> rtt <span class="num">${h(cs.rtt)}</span>` : '') +
+            `</span>`;
+          card.appendChild(head);
+
+          // ── KPI row: created once, stable ─────────────────────────────
           const tmp = document.createElement('div');
-          tmp.innerHTML = buildSparkbarHTML(cs.interface);
+          tmp.innerHTML = buildKPIRowHTML(cs.interface);
           card.appendChild(tmp.firstElementChild);
 
-          // ── Content: replaced every poll ─────────────────────────────
+          // ── Advanced details: replaced every poll ─────────────────────
           const content = document.createElement('div');
           content.className = 'iface-content';
           card.appendChild(content);
 
-          const sibling = appEl.children[idx + 1]; // +1 for msgEl at index 0
-          if (sibling) appEl.insertBefore(card, sibling);
-          else appEl.appendChild(card);
+          ifacesEl.appendChild(card);
         }
 
-        // Refresh stats content — preserve horizontal scroll positions so that
-        // mobile/desktop users who have scrolled a tier table are not snapped
-        // back to the left edge on every poll cycle.
+        // Refresh details content — preserve horizontal scroll positions.
         const content = card.querySelector('.iface-content');
         if (content) {
+          const openState = content.querySelector('details')?.open;
           // Snapshot scrollLeft for every horizontal-scroll container.
           const scrollStates = [];
           content.querySelectorAll('.overflow-x-auto').forEach(el => {
@@ -720,15 +1249,23 @@
 
           content.innerHTML = buildIfaceHTML(cs);
 
-          // Reapply saved scroll positions (order is deterministic — same HTML
-          // structure is always emitted by buildIfaceHTML / buildTierTable).
+          if (openState) content.querySelector('details').open = true;
+
+          // Reapply saved scroll positions.
           let si = 0;
           content.querySelectorAll('.overflow-x-auto').forEach(el => {
             if (si < scrollStates.length) el.scrollLeft = scrollStates[si++];
           });
         }
 
-        // Push to history and redraw sparklines
+        // Update KPI context values and history
+        updateThroughputContext(cs.interface, cs);
+
+        const blEl = document.getElementById('kpi-bl-' + cs.interface);
+        if (blEl) blEl.textContent = h(cs.backlog_bytes || '0b');
+        const blSub = document.getElementById('kpi-bl-' + cs.interface + '-sub');
+        if (blSub) blSub.textContent = fmtNum(cs.backlog_pkts || 0) + ' pkts queued \u00b7 ' + fmtTcBytes(cs.memory_used || '');
+
         pushSample(cs.interface, {
           t,
           tx: cs.tx_bytes_per_s  || 0,
@@ -736,26 +1273,717 @@
           pk: cs.max_pk_delay_ms || 0,
           dr: cs.drops_per_s     || 0,
         });
-        redrawSparklines(cs.interface);
+        redrawKPIs(cs.interface);
       });
 
       // Keep modal charts up-to-date while it's open
       if (modalIface) updateModalCharts(modalIface);
     }
 
+    // ── Tabs ──────────────────────────────────────────────────────────────
+    // Three views, one dashboard. Each tab lazy-loads its data and owns its
+    // refresh timers; switching away stops them so hidden tabs cost nothing.
+
+    let activeTab     = 'sqm';
+    let clientsRange  = '6h';
+    let sysRange      = '6h';
+    const tabTimers   = {};   // tab -> [interval ids]
+
+    function stopTabTimers(tab) {
+      (tabTimers[tab] || []).forEach(clearInterval);
+      delete tabTimers[tab];
+    }
+
+    function setTab(name) {
+      activeTab = name;
+      try { sessionStorage.setItem('cakestats-tab', name); } catch (_) {}
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        const on = b.dataset.tab === name;
+        b.className = 'tab-btn px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide ' +
+          (on ? 'bg-[var(--blue)] text-[var(--accent-text)]'
+              : 'text-[var(--muted)] hover:text-[var(--text)]');
+      });
+      ['overview', 'sqm', 'clients', 'diag', 'system'].forEach(t => {
+        document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
+      });
+      // Health verdicts live on the Overview tab only.
+      const hb = document.getElementById('health-bar');
+      if (hb) hb.classList.toggle('hidden', name !== 'overview');
+
+      // Always stop the other tabs' timers.
+      ['overview', 'clients', 'diag', 'system'].forEach(t => { if (t !== name) stopTabTimers(t); });
+
+      if (name === 'overview') {
+        pollOverview();
+        loadOvIncidents();
+        if (!tabTimers.overview) tabTimers.overview = [setInterval(pollOverview, 10000), setInterval(loadOvIncidents, 60000)];
+      } else if (name === 'clients') {
+        pollClients();
+        renderClientsTable();
+        loadClientHistory();
+        tabTimers.clients = [
+          setInterval(pollClients, 5000),
+          setInterval(loadClientHistory, 60000),
+        ];
+      } else if (name === 'diag') {
+        loadConnHealth();
+        loadLatencyQuality();
+        loadIncidents();
+        loadDiagWanChart();
+        tabTimers.diag = [
+          setInterval(loadConnHealth, 30000),
+          setInterval(loadLatencyQuality, 300000),
+          setInterval(loadIncidents, 60000),
+          setInterval(loadDiagWanChart, 60000),
+        ];
+      } else if (name === 'system') {
+        loadSystemHistory();
+        tabTimers.system = [setInterval(loadSystemHistory, 60000)];
+      }
+    }
+
+    document.getElementById('tabs').addEventListener('click', e => {
+      const btn = e.target.closest('.tab-btn');
+      if (btn) setTab(btn.dataset.tab);
+    });
+
+    // Manual refresh: re-run the current tab's loaders immediately. SQM has
+    // no loaders of its own — its data streams in over SSE every few seconds.
+    function refreshTab() {
+      if (activeTab === 'overview') { pollOverview(); loadOvIncidents(); }
+      else if (activeTab === 'clients') { pollClients(); renderClientsTable(); loadClientHistory(); }
+      else if (activeTab === 'diag') { loadConnHealth(); loadIncidents(); loadDiagWanChart(); loadLatencyQuality(); }
+      else if (activeTab === 'system') { loadSystemHistory(); }
+      const lu = document.getElementById('last-updated');
+      if (lu) { lu.style.color = 'var(--blue)'; setTimeout(() => { lu.style.color = ''; }, 600); }
+    }
+    document.getElementById('refresh-btn').addEventListener('click', refreshTab);
+
+    // ── Clients tab ───────────────────────────────────────────────────────
+
+    let clientsCache = [];  // last /api/clients snapshot
+    let clHistData   = null;
+    let clPlots      = [];  // uPlot instances in the clients tab
+
+    const CL_COLORS = [cv('--muted'), cv('--green'), cv('--amber'), cv('--red'),
+                       cv('--amber'), cv('--blue'), '#E0A3C4', '#8FA3BF'];
+
+    /** "3 min ago" style age from a unix timestamp. */
+    function fmtAge(unix) {
+      if (!unix) return 'never';
+      const s = Math.max(0, Math.round(Date.now() / 1000 - unix));
+      if (s < 60) return s + 's ago';
+      if (s < 3600) return Math.round(s / 60) + 'm ago';
+      if (s < 86400) return Math.round(s / 3600) + 'h ago';
+      return Math.round(s / 86400) + 'd ago';
+    }
+
+    async function pollClients() {
+      try {
+        const r = await fetch(appURL('/api/clients'));
+        if (!r.ok) return;
+        clientsCache = await r.json();
+        renderClientsTable();
+        renderClientKPIs();
+      } catch (e) { /* transient */ }
+    }
+
+    function renderClientKPIs() {
+      const list  = clientsCache;
+      const nOn   = list.filter(c => c.online).length;
+      const rxSum = list.reduce((a, c) => a + (c.rx_rate || 0), 0);
+      const txSum = list.reduce((a, c) => a + (c.tx_rate || 0), 0);
+      document.getElementById('cl-online').textContent = nOn;
+      document.getElementById('cl-online-sub').textContent =
+        'of ' + list.length + ' tracked';
+      document.getElementById('cl-rx').textContent = fmtBits(rxSum);
+      document.getElementById('cl-tx').textContent = fmtBits(txSum);
+      const top = list.find(c => c.online && (c.rx_rate + c.tx_rate) > 1024);
+      const topEl = document.getElementById('cl-top');
+      if (top) {
+        topEl.textContent = top.name || top.mac;
+        document.getElementById('cl-top-sub').textContent =
+          fmtBits(top.rx_rate + top.tx_rate) + ' combined';
+      } else {
+        topEl.textContent = '–';
+        document.getElementById('cl-top-sub').textContent = 'idle right now';
+      }
+    }
+
+    function renderClientsTable() {
+      const tbody = document.getElementById('cl-tbody');
+      if (!tbody) return;
+      const filter = (document.getElementById('cl-filter').value || '').toLowerCase();
+      const rows = clientsCache.filter(c => !filter ||
+        (c.name + ' ' + c.ip + ' ' + c.mac).toLowerCase().includes(filter));
+
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">' +
+          (filter ? 'No clients match “' + h(filter) + '”' : 'No clients seen yet — data appears within 30 seconds.') +
+          '</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = rows.map(c => {
+        const dot = c.online
+          ? '<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[var(--green)]"></span>online</span>'
+          : '<span class="inline-flex items-center gap-1.5 text-[var(--faint)]"><span class="w-2 h-2 rounded-full bg-[var(--faint)]"></span>' +
+            'offline · ' + fmtAge(c.last_seen) + '</span>';
+        const active = c.rx_rate + c.tx_rate > 1024; // > 1 kB/s
+        const sub = [c.ip, c.vendor].filter(Boolean).join(' · ');
+        return '<tr data-mac="' + h(c.mac) + '" data-name="' + h(c.name || c.mac) + '"' +
+          ' data-ip="' + h(c.ip) + '" data-vendor="' + h(c.vendor || '') + '"' +
+          ' title="View connection history"' +
+          ' class="border-b border-[var(--line)]/60 hover:bg-[var(--panel2)]/70">' +
+          '<td class="px-4 py-2.5">' +
+            '<span class="font-semibold text-[var(--text)]">' + h(c.name || c.mac) + '</span>' +
+            '<span class="num text-[11px] text-[var(--faint)] block">' + h(sub) + '</span>' +
+          '</td>' +
+          '<td class="px-3 py-2.5 text-[var(--muted)]">' + dot + '</td>' +
+          '<td class="px-3 py-2.5 text-right num ' + (c.rx_rate > 0 ? 'text-[var(--text)]' : 'text-[var(--faint)]') + '">' + fmtBits(c.rx_rate) + '</td>' +
+          '<td class="px-3 py-2.5 text-right num ' + (c.tx_rate > 0 ? 'text-[var(--text)]' : 'text-[var(--faint)]') + '">' + fmtBits(c.tx_rate) + '</td>' +
+          '<td class="px-3 py-2.5 text-right num text-[var(--muted)]">' + fmtBytes(c.rx_total) + '</td>' +
+          '<td class="px-3 py-2.5 text-right num text-[var(--muted)]">' + fmtBytes(c.tx_total) + '</td>' +
+          '<td class="px-3 py-2.5 text-right num ' + (active ? 'text-[var(--amber)]' : 'text-[var(--muted)]') + '">' + fmtNum(c.conns) + '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    document.getElementById('cl-filter').addEventListener('input', renderClientsTable);
+
+    document.addEventListener('click', e => {
+      const clr = e.target.closest('.clrange-btn');
+      if (clr) { clientsRange = clr.dataset.clrange; _setPillBtns('.clrange-btn', 'clrange', clientsRange); loadClientHistory(); }
+      const sr = e.target.closest('.sysrange-btn');
+      if (sr) { sysRange = sr.dataset.sysrange; _setPillBtns('.sysrange-btn', 'sysrange', sysRange); loadSystemHistory(); }
+      const pr = e.target.closest('.pctrange-btn');
+      if (pr) { sysPctRange = pr.dataset.pctrange; _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange); loadLatencyQuality(); }
+      const ir = e.target.closest('.incrange-btn');
+      if (ir) { sysIncRange = ir.dataset.incrange; _setPillBtns('.incrange-btn', 'incrange', sysIncRange); loadIncidents(); }
+      const cr = e.target.closest('.crange-btn');
+      if (cr && clModal.mac) {
+        clModal.range = cr.dataset.crange;
+        _setPillBtns('.crange-btn', 'crange', clModal.range);
+        loadClientModalHistory();
+      }
+      // Client row → drill-down modal
+      const row = e.target.closest('tr[data-mac]');
+      if (row) {
+        openClientModal(row.dataset.mac, row.dataset.name, row.dataset.ip, row.dataset.vendor);
+        return;
+      }
+    });
+
+    /** Shared styling for small range-pill button groups (attr = data-* key). */
+    function _setPillBtns(sel, attr, activeRange) {
+      document.querySelectorAll(sel).forEach(b => {
+        const on = b.dataset[attr] === activeRange;
+        b.className = b.className.replace(/ ?font-semibold/, '') + (on ? ' font-semibold' : '');
+        b.style.background = on ? 'var(--blue)' : '';
+        b.style.color = on ? 'var(--accent-text)' : '';
+      });
+    }
+
+    async function loadClientHistory() {
+      const cd = document.getElementById('cl-charts');
+      if (!cd) return;
+      try {
+        const r = await fetch(appURL('/api/history/clients?range=' + encodeURIComponent(clientsRange)));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        clHistData = await r.json();
+      } catch (e) {
+        cd.innerHTML = '<p class="text-[var(--red)] text-center py-8 text-sm">Failed to load client history: ' + h(String(e)) + '</p>';
+        return;
+      }
+      renderClientHistory();
+    }
+
+    function renderClientHistory() {
+      const cd = document.getElementById('cl-charts');
+      if (!cd || !clHistData || !isUPlotReady()) return;
+      cd.innerHTML = '';
+      clPlots.forEach(p => { try { p.u.destroy(); } catch (_) {} });
+      clPlots = [];
+
+      const rx = clHistData.filter(s => s.rx && s.rx.some(v => v > 0));
+      const tx = clHistData.filter(s => s.tx && s.tx.some(v => v > 0));
+      if (rx.length === 0 && tx.length === 0) {
+        cd.innerHTML = '<p class="text-[var(--muted)] text-center py-8 text-sm">' +
+          'No client history yet for this range — VictoriaMetrics keeps it from now on.</p>';
+        return;
+      }
+
+      const W = Math.max(200, cd.clientWidth - 4);
+      const H = 160;
+      const t = (rx[0] || tx[0]).t;
+
+      const mk = (list, pick, title) => {
+        if (list.length === 0) return;
+        clPlots.push({ u: makeChart(cd, W, H, t, list.map((s, i) => ({
+          label: s.name || s.mac,
+          data:  pick(s),
+          stroke: CL_COLORS[i % CL_COLORS.length],
+        })), title, v => fmtBits(v), 'cl-x') });
+      };
+      mk(rx, s => s.rx, 'Download rate per client (' + h(clientsRange) + ')');
+      mk(tx, s => s.tx, 'Upload rate per client (' + h(clientsRange) + ')');
+    }
+
+    // ── System tab ────────────────────────────────────────────────────────
+
+    let sysData = null;
+    let sysPlots = [];
+
+    async function loadSystemHistory() {
+      const cd = document.getElementById('sys-charts');
+      if (!cd) return;
+      try {
+        const r = await fetch(appURL('/api/history/system?range=' + encodeURIComponent(sysRange)));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        sysData = await r.json();
+      } catch (e) {
+        cd.innerHTML = '<p class="text-[var(--red)] text-center py-8 text-sm">Failed to load system history: ' + h(String(e)) + '</p>';
+        return;
+      }
+      renderSystemHistory();
+    }
+
+    function renderSystemHistory() {
+      const cd = document.getElementById('sys-charts');
+      if (!cd || !sysData || !isUPlotReady()) return;
+      // WAN performance strip: 24h scalars as compact cards.
+      const strip = document.getElementById('wan-strip');
+      if (strip && (sysData.peakdown || sysData.totaldown)) {
+        strip.classList.remove('hidden');
+        const shaped = sysData.shapeddown || 0;
+        const pct = shaped > 0 ? ' (' + (sysData.peakdown / shaped * 100).toFixed(0) + '% of the ' + shaped.toFixed(0) + ' Mbit/s shaper)' : '';
+        const mini = (label, val, sub, col) =>
+          '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2 flex flex-col">' +
+            '<div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
+              '<span class="w-1.5 h-1.5 rounded-full" style="background:' + col + '"></span>' + label +
+            '</div>' +
+            '<div class="num display text-xl font-bold mt-1 leading-tight">' + val + '</div>' +
+            '<div class="text-[11px] text-[var(--muted)] mt-0.5">' + (sub || '&nbsp;') + '</div>' +
+          '</div>';
+        strip.innerHTML =
+          mini('Peak download &middot; 24h', sysData.peakdown.toFixed(0) + ' Mbit/s', 'busiest 5-minute window' + pct, cv('--blue')) +
+          mini('Peak upload &middot; 24h', sysData.peakup.toFixed(0) + ' Mbit/s', sysData.p95up.toFixed(0) + ' Mbit/s typical busy (p95)', cv('--green')) +
+          mini('Typical busy rate &middot; p95', sysData.p95down.toFixed(0) + ' Mbit/s', 'download, exceeded 5% of the time', cv('--muted')) +
+          mini('Traffic &middot; last 24h', sysData.totaldown.toFixed(1) + ' GB', sysData.totalup.toFixed(1) + ' GB uploaded', cv('--amber'));
+      }
+      if (!sysData.t || sysData.t.length < 2) {
+        cd.innerHTML = '<p class="text-[var(--muted)] text-center py-8 text-sm">Not enough history yet for this range.</p>';
+        return;
+      }
+      cd.innerHTML = '';
+      sysPlots.forEach(p => { try { p.u.destroy(); } catch (_) {} });
+      sysPlots = [];
+
+      const W = Math.max(200, cd.clientWidth - 4);
+      const H = 140;
+      const one = (label, data, color, yFmt, fill) => {
+        sysPlots.push({ u: makeChart(cd, W, H, sysData.t,
+          [{ label, data, stroke: color, fill: fill || undefined }],
+          label, yFmt, 'sys-x') });
+      };
+      one('CPU temperature (°C)', sysData.temp, cv('--amber'), v => v.toFixed(1) + ' °C');
+      if (sysData.wanrx) sysPlots.push({ u: makeChart(cd, W, H, sysData.t, [
+          { label: 'Download (Mbit/s)', data: sysData.wanrx, stroke: cv('--blue'), fill: 'rgba(56,189,248,0.10)' },
+          { label: 'Upload (Mbit/s)', data: sysData.wantx, stroke: cv('--green'), fill: 'rgba(74,222,128,0.10)' },
+        ], 'WAN traffic — download vs upload (Mbit/s)', v => v.toFixed(0), 'sys-x') });
+      if (sysData.bloatdn) sysPlots.push({ u: makeChart(cd, W, H, sysData.t, [
+          { label: 'Download +ms', data: sysData.bloatdn, stroke: cv('--amber'), fill: 'rgba(251,191,36,0.10)' },
+          { label: 'Upload +ms', data: sysData.bloatup, stroke: cv('--amber') },
+        ], 'Latency under load — extra delay added by a full line (ms, hourly probe 11:00–20:00)', v => v.toFixed(1) + ' ms', 'sys-x') });
+      one('CPU utilisation (%)', sysData.cpu, cv('--red'), v => v.toFixed(0) + ' %');
+      one('System load (1 min)', sysData.load, cv('--muted'), v => v.toFixed(2));
+      one('Memory available (%)', sysData.mem, cv('--green'), v => v.toFixed(0) + ' %', 'rgba(74,222,128,0.10)');
+      one('Open connections', sysData.conns, cv('--amber'), v => fmtNum(v));
+      one('Internet response time (ms)', sysData.wan, cv('--blue'), v => v.toFixed(2) + ' ms');
+      if (sysData.wanerrs) one('WAN link errors (per min)', sysData.wanerrs, cv('--red'), v => v.toFixed(2));
+    }
+
+
+
+    // ── Client drill-down modal ───────────────────────────────────────────
+
+    const clModal = {
+      mac: null, name: '', ip: '', vendor: '',
+      range: '24h', timer: null, plots: [],
+    };
+
+    function openClientModal(mac, name, ip, vendor) {
+      clModal.mac = mac;
+      clModal.name = name;
+      clModal.ip = ip;
+      clModal.vendor = vendor;
+      clModal.range = '24h';
+      _setPillBtns('.crange-btn', 'crange', clModal.range);
+      document.getElementById('clm-title').textContent = name;
+      const sub = [ip, mac, vendor].filter(Boolean).join(' · ');
+      document.getElementById('clm-sub').textContent = sub;
+      document.getElementById('clm-rx').textContent = '–';
+      document.getElementById('clm-tx').textContent = '–';
+      document.getElementById('client-modal').style.display = 'flex';
+      requestAnimationFrame(loadClientModalHistory);
+      if (clModal.timer) clearInterval(clModal.timer);
+      clModal.timer = setInterval(loadClientModalHistory, 60000);
+    }
+
+    function closeClientModal() {
+      clModal.mac = null;
+      if (clModal.timer) { clearInterval(clModal.timer); clModal.timer = null; }
+      clModal.plots.forEach(p => { try { p.u.destroy(); } catch (_) {} });
+      clModal.plots = [];
+      document.getElementById('client-modal').style.display = 'none';
+      const cd = document.getElementById('clm-charts');
+      if (cd) cd.innerHTML = '';
+    }
+
+    async function loadClientModalHistory() {
+      if (!clModal.mac) return;
+      const cd = document.getElementById('clm-charts');
+      if (!cd) return;
+      cd.innerHTML = '<p class="text-[var(--muted)] text-center py-10 text-sm">Loading ' +
+        h(clModal.range) + ' history…</p>';
+      let d;
+      try {
+        const r = await fetch(appURL('/api/history/client?mac=' +
+          encodeURIComponent(clModal.mac) + '&range=' + encodeURIComponent(clModal.range)));
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        d = await r.json();
+      } catch (e) {
+        cd.innerHTML = '<p class="text-[var(--red)] text-center py-10 text-sm">Failed to load: ' + h(String(e)) + '</p>';
+        return;
+      }
+      if (!clModal.mac) return; // modal closed while loading
+
+      document.getElementById('clm-rx').textContent = fmtBytes(d.total_rx || 0);
+      document.getElementById('clm-tx').textContent = fmtBytes(d.total_tx || 0);
+
+      cd.innerHTML = '';
+      clModal.plots.forEach(p => { try { p.u.destroy(); } catch (_) {} });
+      clModal.plots = [];
+
+      if (!d.t || d.t.length < 2) {
+        cd.innerHTML = '<p class="text-[var(--muted)] text-center py-10 text-sm">' +
+          'No history in this window yet — per-client data keeps accumulating.</p>';
+        return;
+      }
+      const W = _chartWidth(cd);
+      const H = 150;
+      const plot = (series, title, yFmt) => {
+        clModal.plots.push({ u: makeChart(cd, W, H, d.t, series, title, yFmt, 'clm-x') });
+      };
+      plot([{ label: 'download', data: d.rx, stroke: cv('--green'), fill: 'rgba(74,222,128,0.10)' }],
+        'Download rate', v => fmtBits(v));
+      plot([{ label: 'upload', data: d.tx, stroke: cv('--blue') }],
+        'Upload rate', v => fmtBits(v));
+      plot([{ label: 'connections', data: d.conns, stroke: cv('--amber') }],
+        'Active connections', v => fmtNum(v));
+    }
+
+    // ── System tab: tunnel, connection table, latency quality, incidents ──
+
+    let sysPctRange = '24h';
+    let sysIncRange = '24h';
+    let ovInc = null;   // last /api/incidents?range=24h (Overview footer)
+
+    function rangeWord(r) { return r === '24h' ? '24 hours' : r === '7d' ? '7 days' : '30 days'; }
+
+    async function loadOvIncidents() {
+      try {
+        const d = await fetch(appURL('/api/incidents?range=24h')).then(r => r.json());
+        ovInc = d && typeof d.count === 'number' ? d : null;
+        renderOverview(); // footer re-renders with the new count
+      } catch (_) {}
+      try {
+        // WARP state gets its own line on the Internet card — the exit
+        // path is a headline fact, not a footnote.
+        const t = await fetch(appURL('/api/tunnel')).then(r => r.json());
+        const el = document.getElementById('ov-warp');
+        if (!el) return;
+        if (t.available) {
+          const ok = t.handshake_age_s >= 0 && t.handshake_age_s < 180;
+          const dot = ok ? 'var(--green)' : 'var(--amber)';
+          const state = ok ? 'healthy' : 'stale handshake';
+          el.innerHTML = 'WARP tunnel <span class="inline-block w-1.5 h-1.5 rounded-full mx-1 align-middle" style="background:' + dot + '"></span>' +
+            '<span class="font-semibold">' + state + '</span>' +
+            ' <span class="text-[var(--muted)]">&middot; ' + ovBytes(t.rx_bytes) + ' via tunnel &middot; ' + t.reconnects_24h + ' reconnects/24h</span>';
+        } else {
+          el.innerHTML = 'WARP tunnel <span class="inline-block w-1.5 h-1.5 rounded-full mx-1 align-middle" style="background:var(--muted)"></span>' +
+            '<span class="text-[var(--muted)]">not in use — direct line</span>';
+        }
+      } catch (_) {}
+    }
+
+    // Direct-line (native WAN) helpers for the exit-paths strip. WAN rates come
+    // from the live SSE snapshot: eth0 TX is total upload (including WARP's
+    // encapsulated traffic), ifb4eth0 TX mirrors total download.
+    function wanUp() {
+      return latestIfaces.filter(i => i.interface === 'eth0')
+        .reduce((a, i) => a + (i.tx_bytes_per_s || 0), 0);
+    }
+    function wanDown() {
+      return latestIfaces.filter(i => /^ifb/.test(i.interface))
+        .reduce((a, i) => a + (i.tx_bytes_per_s || 0), 0);
+    }
+    function fillDirectCard(down, up, note) {
+      const el = document.getElementById('tn-direct');
+      if (!latestIfaces.length) { el.textContent = '\u2013'; document.getElementById('tn-direct-sub').textContent = '\u00A0'; return; }
+      el.textContent = fmtBits(down) + ' \u25BC / ' + fmtBits(up) + ' \u25B0';
+      document.getElementById('tn-direct-sub').textContent = note;
+    }
+    let lastTunnel = null; // last /api/tunnel result, reused by the SSE handler
+
+    async function loadConnHealth() {
+      try {
+        const t = await fetch(appURL('/api/tunnel')).then(r => r.json());
+        lastTunnel = t;
+        const st = document.getElementById('tn-state');
+        const stSub = document.getElementById('tn-state-sub');
+        if (t.available) {
+          const hs = t.handshake_age_s;
+          // Status lives in the dot; the value text stays neutral and readable.
+          const dot = c => '<span class="inline-block w-2 h-2 rounded-full mr-2 align-middle" style="background:' + c + '"></span>';
+          if (hs >= 0 && hs < 180) {
+            st.innerHTML = dot('var(--green)') + 'healthy';
+            stSub.textContent = 'handshake ' + (hs < 60 ? Math.round(hs) + 's' : Math.round(hs / 60) + 'm') + ' ago · ' + (t.endpoint || '');
+          } else {
+            st.innerHTML = dot('var(--amber)') + 'stale';
+            stSub.textContent = 'no fresh handshake — traffic falls back to the direct line';
+          }
+          if (t.rates_ok) {
+            document.getElementById('tn-traffic').textContent =
+              fmtBits(t.rx_per_s) + ' \u25BC / ' + fmtBits(t.tx_per_s) + ' \u25B0';
+          } else {
+            document.getElementById('tn-traffic').textContent = '\u2013';
+          }
+          document.getElementById('tn-traffic-sub').textContent =
+            ovBytes(t.rx_bytes) + ' / ' + ovBytes(t.tx_bytes) + ' total through the tunnel';
+          fillDirectCard(Math.max(0, wanDown() - t.rx_per_s), Math.max(0, wanUp() - t.tx_per_s),
+            'native traffic bypassing the tunnel (approximate: WAN minus tunnel)');
+          const rec = document.getElementById('tn-reconnects');
+          rec.textContent = t.reconnects_24h + '\u00D7 in 24h';
+          document.getElementById('tn-reconnects-sub').textContent =
+            t.reconnects_7d + '\u00D7 in 7 days' + (t.reconnects_7d > 3 ? ' — flapping?' : '');
+        } else {
+          st.textContent = 'not in use';
+          st.style.color = 'var(--muted)';
+          stSub.textContent = 'traffic uses the direct WAN line';
+          document.getElementById('tn-traffic').textContent = '\u2013';
+          document.getElementById('tn-traffic-sub').textContent = '\u00A0';
+          document.getElementById('tn-reconnects').textContent = '\u2013';
+          document.getElementById('tn-reconnects-sub').textContent = '\u00A0';
+          fillDirectCard(wanDown(), wanUp(), 'everything is on the direct line right now');
+        }
+      } catch (_) {}
+      try {
+        const hc = await fetch(appURL('/api/health')).then(r => r.json());
+        const ct = (hc || []).find(c => c.name === 'Connection table');
+        if (ct) {
+          const el = document.getElementById('tn-conntrack');
+          // Neutral value text; a status dot carries the verdict color.
+          const dotC = ct.state === 'ok' ? 'var(--green)'
+            : ct.state === 'warn' ? 'var(--amber)'
+            : ct.state === 'crit' ? 'var(--red)' : 'var(--faint)';
+          el.innerHTML = '<span class="inline-block w-2 h-2 rounded-full mr-2 align-middle" style="background:' + dotC + '"></span>' + h(ct.value);
+          document.getElementById('tn-conntrack-sub').textContent = ct.detail;
+        }
+      } catch (_) {}
+    }
+
+    async function loadLatencyQuality() {
+      try {
+        const d = await fetch(appURL('/api/percentiles?range=' + sysPctRange)).then(r => r.json());
+        const el = document.getElementById('pct-strip');
+        const card = (label, big, sub, color) =>
+          '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">' +
+          '<div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' + label + '</div>' +
+          '<div class="num text-lg font-bold mt-1" style="color:' + color + '">' + big + '</div>' +
+          '<div class="text-[11px] text-[var(--muted)] mt-0.5">' + sub + '</div></div>';
+        let html = '';
+        (d.targets || []).forEach(tg => {
+          html += card('Line latency &middot; ' + h(tg.name),
+            tg.p50.toFixed(1) + ' / ' + tg.p95.toFixed(1) + ' ms',
+            'p50 / p95 &middot; ' + tg.samples + ' samples', 'var(--text)');
+        });
+        if (d.loaded) html += card('Under load &middot; probe',
+          d.loaded.p95.toFixed(1) + ' ms',
+          'p95 ping while downloading' + (d.idle ? ' (idle ' + d.idle.p50.toFixed(1) + ' ms)' : ''), 'var(--text)');
+        if (d.loss) html += card('Packet loss',
+          (d.loss.p95 * 100).toFixed(2) + ' %',
+          'p95 loss rate &middot; ' + d.loss.samples + ' checks', 'var(--text)');
+        el.innerHTML = html || '<p class="text-[var(--muted)] text-sm py-2">No latency history yet — numbers appear as data collects.</p>';
+      } catch (_) {}
+    }
+
+    async function loadIncidents() {
+      try {
+        const d = await fetch(appURL('/api/incidents?range=' + sysIncRange)).then(r => r.json());
+        const sum = document.getElementById('inc-summary');
+        const list = document.getElementById('inc-list');
+        if (!d || typeof d.count !== 'number') {
+          sum.textContent = 'Incident history unavailable.';
+          sum.style.color = 'var(--muted)';
+          list.innerHTML = '';
+          return;
+        }
+        if (d.count === 0) {
+          sum.innerHTML = '<span class="inline-block w-2 h-2 rounded-full mr-2 align-middle" style="background:var(--green)"></span>' +
+            'None in the last ' + rangeWord(sysIncRange) + ' — the shaper held latency flat.';
+          list.innerHTML = '';
+          return;
+        }
+        sum.style.color = 'var(--text)';
+        sum.textContent = d.count + ' episode' + (d.count === 1 ? '' : 's') +
+          ' \u00B7 worst added ' + d.worst_ms.toFixed(0) + ' ms of latency';
+        list.innerHTML = d.episodes.slice(0, 12).map(ep => {
+          const when = new Date(ep.start * 1000);
+          const dur = Math.max(1, Math.round((ep.end - ep.start) / 60));
+          const src = ep.source === 'probe' ? 'during the speed check' : 'during live traffic';
+          return '<div class="flex items-start gap-2.5">' +
+            '<span class="mt-0.5 text-[8px]" style="color:' + (ep.peak_ms > 60 ? 'var(--red)' : 'var(--amber)') + '">&#9679;</span>' +
+            '<span class="num text-[11px] text-[var(--muted)] w-28 shrink-0">' +
+            when.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</span>' +
+            '<span class="num w-20 shrink-0 font-semibold" style="color:var(--amber)">+' + ep.peak_ms.toFixed(0) + ' ms</span>' +
+            '<span class="flex-1 leading-snug">' + h(ep.direction || '—') + ' \u00B7 ' + src +
+            ' \u00B7 ~' + dur + ' min' + (ep.hint ? ' \u00B7 ' + h(ep.hint) : '') + '</span></div>';
+        }).join('');
+      } catch (_) {}
+    }
+
+    // ── Theme toggle ──────────────────────────────────────────────────────
+
+    (function themeInit() {
+      const btn = document.getElementById('theme-toggle');
+      const isDark = document.documentElement.dataset.theme === 'dark';
+      document.getElementById('icon-moon').classList.toggle('hidden', isDark);
+      document.getElementById('icon-sun').classList.toggle('hidden', !isDark);
+      btn.addEventListener('click', () => {
+        const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem('cakestats-theme', next);
+          sessionStorage.setItem('cakestats-tab', activeTab); // survive the reload
+        } catch (_) {}
+        // Reload so every canvas chart re-resolves theme colors cleanly.
+        location.reload();
+      });
+    })();
+
+    // ── Health verdict bar ────────────────────────────────────────────────
+    // Polls /api/health and renders plain-language verdict chips so problems
+    // are obvious without interpreting raw charts.
+
+    const healthBarEl     = document.getElementById('health-bar');
+    const healthSummaryEl = document.getElementById('health-summary');
+    const healthChipsEl   = document.getElementById('health-chips');
+
+    const STATE_LABELS = {
+      ok: 'good', warn: 'warning', crit: 'problem', unknown: 'no data',
+    };
+    // State colors come from the active theme's CSS variables so both the
+    // warm-dark and warm-light themes get correctly-tinted verdicts.
+    const stateColor = s => {
+      const map = { ok: '--green', warn: '--amber', crit: '--red', unknown: '--faint' };
+      return getComputedStyle(document.documentElement).getPropertyValue(map[s] || '--faint').trim() || '#8FA3BF';
+    };
+
+    function renderHealth(checks) {
+      if (!Array.isArray(checks) || checks.length === 0) return;
+      healthBarEl.classList.remove('hidden');
+
+      // Minor checks (clock drift and friends) never count as problems.
+      const major = checks.filter(c => !c.minor);
+      const nCrit = major.filter(c => c.state === 'crit').length;
+      const nWarn = major.filter(c => c.state === 'warn').length;
+      let summaryHTML;
+      if (nCrit > 0) {
+        summaryHTML = '<span style="color:' + stateColor('crit') + '">\u25CF</span> ' +
+          nCrit + ' problem' + (nCrit > 1 ? 's' : '') + ' detected' +
+          (nWarn > 0 ? ' <span class="font-normal text-[var(--muted)]">\u00b7 ' +
+            nWarn + ' warning' + (nWarn > 1 ? 's' : '') + '</span>' : '');
+        healthSummaryEl.style.borderColor = stateColor('crit');
+        healthSummaryEl.style.color = stateColor('crit');
+      } else if (nWarn > 0) {
+        summaryHTML = '<span style="color:' + stateColor('warn') + '">\u25CF</span> ' +
+          nWarn + ' warning' + (nWarn > 1 ? 's' : '') +
+          ' <span class="font-normal text-[var(--muted)]">\u00b7 otherwise healthy</span>';
+        healthSummaryEl.style.borderColor = stateColor('warn');
+        healthSummaryEl.style.color = stateColor('warn');
+      } else {
+        summaryHTML = '<span style="color:' + stateColor('ok') + '">\u25CF</span> All systems normal';
+        healthSummaryEl.style.borderColor = 'rgba(74,222,128,0.35)';
+        healthSummaryEl.style.color = stateColor('ok');
+      }
+      healthSummaryEl.innerHTML = summaryHTML;
+
+      // Problems get full cards with the plain-language verdict; healthy
+      // checks collapse into one compact pill row so the eye lands on what
+      // is wrong instead of scanning 15 same-looking panels.
+      const problems = checks.filter(c => c.state === 'warn' || c.state === 'crit');
+      const fine = checks.filter(c => c.state !== 'warn' && c.state !== 'crit');
+
+      const cardHTML = problems.map(c => {
+        const col = stateColor(c.state);
+        const glow = c.state === 'crit' ? ' glow-crit' : ' glow-warn';
+        return '<div class="rounded-xl border bg-[var(--panel)] px-4 py-3' + glow + '"' +
+               ' style="border-color:var(--line);border-left:3px solid ' + col + '">' +
+          '<div class="flex items-center gap-2">' +
+            '<span style="color:' + col + '" class="text-[10px]">&#9679;</span>' +
+            '<span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)] truncate">' + h(c.name) + '</span>' +
+            '<span class="num display text-sm font-bold ml-auto whitespace-nowrap" style="color:' + col + '">' + h(c.value) + '</span>' +
+          '</div>' +
+          '<div class="text-[11px] text-[var(--muted)] mt-1.5 leading-snug">' + h(c.detail) + '</div>' +
+        '</div>';
+      }).join('');
+
+      const pillHTML = fine.map(c => {
+        const col = stateColor(c.state);
+        // Pill values read neutral — the dot carries the state color, so a
+        // wall of green numbers doesn't vibrate against the background.
+        return '<span class="inline-flex items-center gap-1.5 rounded-full border bg-[var(--panel)] px-3 py-1 text-[10px]"' +
+               ' title="' + h(c.detail) + '" style="border-color:var(--line)">' +
+          '<span style="color:' + col + '" class="text-[8px]">&#9679;</span>' +
+          '<span class="uppercase tracking-wider text-[var(--muted)]">' + h(c.name) + '</span>' +
+          '<span class="num font-semibold">' + h(c.value) + '</span>' +
+        '</span>';
+      }).join('');
+
+      healthChipsEl.innerHTML = cardHTML +
+        (fine.length ? '<div class="flex flex-wrap gap-1.5 sm:col-span-full mt-1">' + pillHTML + '</div>' : '');
+    }
+
+    async function pollHealth() {
+      try {
+        const r = await fetch(appURL('/api/health'));
+        if (r.ok) {
+          const checks = await r.json();
+          healthChecks = checks;   // overview footer reads this
+          renderHealth(checks);
+        }
+      } catch (e) { /* transient — bar just stays stale */ }
+    }
+    pollHealth();
+    setInterval(pollHealth, 5000);
+
     // ── SSE connection ────────────────────────────────────────────────────
 
     function setStatus(text, cls) {
-      connStatusEl.textContent = text;
-      connStatusEl.className   = cls;
+      connStatusEl.innerHTML =
+        '<span class="w-1.5 h-1.5 rounded-full ' +
+        (text === 'connected' ? 'bg-[var(--green)]' : text === 'reconnecting' ? 'bg-[var(--red)]' : 'bg-[var(--muted)]') +
+        '"></span>' + text;
+      connStatusEl.className = cls || 'text-[var(--muted)] flex items-center gap-1.5';
     }
 
     function connect() {
-      setStatus('connecting', 'text-[#6B8AB0]');
+      setStatus('connecting');
 
       const es = new EventSource(appURL('/events'));
 
-      es.onopen = () => setStatus('connected', 'text-[#4DB38A]');
+      es.onopen = () => setStatus('connected');
 
       es.onmessage = e => {
         try { handleData(JSON.parse(e.data)); }
@@ -763,14 +1991,237 @@
       };
 
       es.onerror = () => {
-        setStatus('reconnecting', 'text-[#E07070]');
+        setStatus('reconnecting');
         es.close();
         setTimeout(connect, 3000);
       };
     }
 
+    // ── Overview tab ──────────────────────────────────────────────────────
+    // UniFi-style landing view: hero cards up top, problems as cards, the
+    // healthy rest as pills, top clients + events feed, WAN day chart.
+    // Everything clickable drills down: Internet/Gateway → System tab,
+    // client rows → client modal.
+
+    let latestIfaces = [];   // last SSE stats (for the live throughput hero)
+    let healthChecks = [];   // last /api/health payload
+    let ovWanData = null;    // /api/history/system 24h payload (chart + gauges)
+    let ovWanAt = 0;         // when ovWanData was fetched
+    let ovPlots = [];
+
+    function ovMbit(bps) {
+      if (bps == null || isNaN(bps)) return '–';
+      const mb = bps * 8 / 1e6;
+      return mb >= 100 ? mb.toFixed(0) : mb >= 10 ? mb.toFixed(1) : mb.toFixed(2);
+    }
+
+    // Minimal canvas sparkline — no axes, just the shape. Both traces share
+    // one scale so the down/up shapes are comparable.
+    function ovSparkDual(cv, dn, up, c1, c2) {
+      const ctx = cv.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const W = cv.clientWidth || cv.parentElement.clientWidth || 300;
+      const H = 56;
+      cv.width = W * dpr; cv.height = H * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, W, H);
+      if (!dn || dn.length < 2) return;
+      const max = Math.max(...dn, ...(up || [0]), 1e-9);
+      const trace = (series, color, fill) => {
+        ctx.beginPath();
+        series.forEach((v, i) => {
+          const x = i / (series.length - 1) * (W - 2) + 1;
+          const y = H - 4 - (v / max) * (H - 10);
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.lineJoin = 'round';
+        ctx.stroke();
+        ctx.lineTo(W - 1, H); ctx.lineTo(1, H); ctx.closePath();
+        ctx.globalAlpha = 0.10;
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      };
+      trace(dn, c1, true);
+      if (up && up.length > 1) trace(up, c2, true);
+    }
+
+    function ovGauge(label, val, fmt, frac, col) {
+      const pct = Math.max(2, Math.min(100, frac * 100));
+      return '<div class="flex items-center gap-3">' +
+        '<span class="text-[11px] uppercase tracking-wider text-[var(--muted)] w-12 shrink-0">' + label + '</span>' +
+        '<div class="flex-1 h-1.5 rounded-full bg-[var(--panel2)] overflow-hidden">' +
+          '<div class="h-full rounded-full" style="width:' + pct.toFixed(0) + '%;background:' + col + '"></div>' +
+        '</div>' +
+        '<span class="num text-[12px] font-semibold w-14 text-right">' + fmt + '</span>' +
+      '</div>';
+    }
+
+    function ovBytes(b) {
+      if (b == null || isNaN(b)) return '–';
+      if (b >= 1024 ** 3) return (b / 1024 ** 3).toFixed(1) + ' GB';
+      if (b >= 1024 ** 2) return (b / 1024 ** 2).toFixed(0) + ' MB';
+      return (b / 1024).toFixed(0) + ' KB';
+    }
+
+    function renderOverview() {
+      // Internet hero from live SSE stats.
+      const down = latestIfaces.filter(i => i.direction === 'ingress' || /^ifb/.test(i.interface))
+        .reduce((a, i) => a + (i.tx_bytes_per_s || 0), 0);
+      const up = latestIfaces.filter(i => i.direction !== 'ingress' && !/^ifb/.test(i.interface))
+        .reduce((a, i) => a + (i.tx_bytes_per_s || 0), 0);
+      document.getElementById('ov-down').textContent = ovMbit(down);
+      document.getElementById('ov-up').textContent = ovMbit(up);
+      const css = getComputedStyle(document.documentElement);
+      // Shape of the last ~3h (24h payload at 5-min steps, last 36 samples).
+      const dn = ovWanData && ovWanData.wanrx ? ovWanData.wanrx.slice(-36) : null;
+      const upl = ovWanData && ovWanData.wantx ? ovWanData.wantx.slice(-36) : null;
+      if (dn && dn.length > 1) {
+        ovSparkDual(document.getElementById('ov-spark'), dn, upl,
+          css.getPropertyValue('--blue').trim(), css.getPropertyValue('--green').trim());
+      }
+
+      // Footer line from health checks.
+      const hchecks = healthChecks || [];
+      const wan = hchecks.find(c => c.name === 'ISP session');
+      const warp = hchecks.find(c => c.name === 'Exit path (WARP)');
+      const bits = [];
+      if (wan) bits.push(h(wan.value));
+      if (warp) bits.push('exit: ' + h(warp.value));
+      if (ovInc) {
+        if (ovInc.count > 0) bits.push('<span style="color:var(--amber)">buffering ' + ovInc.count + '&times; in 24h</span>');
+        else bits.push('no buffering in 24h');
+      }
+      document.getElementById('ov-wan-foot').innerHTML =
+        '<span style="color:' + stateColor(worstState(hchecks)) + '">&#9679;</span> WAN &middot; ' +
+        (bits.join(' &middot; ') || 'state unknown');
+
+      // Gateway gauges from the system history payload (last sample).
+      if (ovWanData && ovWanData.cpu && ovWanData.cpu.length) {
+        const last = a => a[a.length - 1];
+        const mem = last(ovWanData.mem) ?? 0;          // available %
+        const temp = last(ovWanData.temp) ?? 0;
+        const load = last(ovWanData.load) ?? 0;
+        document.getElementById('ov-gauges').innerHTML =
+          ovGauge('CPU', null, last(ovWanData.cpu).toFixed(0) + '%', last(ovWanData.cpu) / 100, 'var(--red)') +
+          ovGauge('RAM', null, (100 - mem).toFixed(0) + '%', (100 - mem) / 100, 'var(--blue)') +
+          ovGauge('TEMP', null, temp.toFixed(0) + '\u00b0C', temp / 100, temp > 70 ? 'var(--red)' : temp > 60 ? 'var(--amber)' : 'var(--green)') +
+          ovGauge('LOAD', null, load.toFixed(2), Math.min(1, load / 4), 'var(--blue)');
+      }
+    }
+
+    // Overlay removed: both traces now render in ovSparkDual.
+
+    function worstState(checks) {
+      if (!checks.length) return 'unknown';
+      const order = { crit: 3, warn: 2, unknown: 0, ok: -1 };
+      return checks.reduce((w, c) => (order[c.state] ?? 0) > (order[w] ?? 0) ? c.state : w, 'ok');
+    }
+
+    function renderTopClients(list) {
+      const el = document.getElementById('ov-topclients');
+      const top = list.filter(c => c.online).sort((a, b) => (b.rx_total + b.tx_total) - (a.rx_total + a.tx_total)).slice(0, 5);
+      const max = Math.max(...top.map(c => c.rx_total + c.tx_total), 1);
+      el.innerHTML = top.map(c => {
+        const total = c.rx_total + c.tx_total;
+        const name = c.name || c.ip || c.mac;
+        return '<div class="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--panel2)] cursor-pointer tr-client" data-mac="' + h(c.mac) + '"' +
+               ' data-name="' + h(name) + '" data-ip="' + h(c.ip) + '" data-vendor="' + h(c.vendor || '') + '"' +
+               ' title="Open full connection history">' +
+          '<span class="text-[12px] flex-1 truncate">' + h(name) + '</span>' +
+          '<div class="w-24 sm:w-40 h-1.5 rounded-full bg-[var(--panel2)] overflow-hidden">' +
+            '<div class="h-full rounded-full" style="width:' + (total / max * 100).toFixed(0) + '%;background:var(--blue)"></div>' +
+          '</div>' +
+          '<span class="num text-[12px] font-semibold w-16 text-right">' + ovBytes(total) + '</span>' +
+        '</div>';
+      }).join('') || '<p class="text-[var(--muted)] text-[12px]">no clients yet</p>';
+      el.querySelectorAll('.tr-client').forEach(r => {
+        r.addEventListener('click', () => openClientModal(r.dataset.mac, r.dataset.name, r.dataset.ip, r.dataset.vendor));
+      });
+      // Also the Network card mini list (top 3).
+      document.getElementById('ov-top3').innerHTML = top.slice(0, 3).map(c => {
+        const total = c.rx_total + c.tx_total;
+        return '<div class="flex items-center gap-2 text-[11px]">' +
+          '<span class="w-1.5 h-1.5 rounded-full" style="background:var(--green)"></span>' +
+          '<span class="flex-1 truncate text-[var(--muted)]">' + h(c.name || c.ip || c.mac) + '</span>' +
+          '<span class="num font-semibold">' + ovBytes(total) + '</span></div>';
+      }).join('');
+    }
+
+    function renderEvents(list) {
+      const el = document.getElementById('ov-events');
+      const sevCol = s => stateColor(s === 'ok' ? 'ok' : s === 'warn' ? 'warn' : s === 'crit' ? 'crit' : 'unknown');
+      const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      el.innerHTML = list.map(ev => {
+        const d = new Date(ev.at * 1000);
+        const today = new Date().toDateString() === d.toDateString();
+        const when = today
+          ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : (d.getDate() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        return '<div class="flex items-start gap-2.5">' +
+          '<span class="mt-0.5 text-[8px]" style="color:' + sevCol(ev.sev) + '">&#9679;</span>' +
+          '<span class="num text-[11px] text-[var(--muted)] w-24 shrink-0">' + when + '</span>' +
+          '<span class="flex-1 leading-snug">' + h(ev.msg) + '</span>' +
+        '</div>';
+      }).join('') || '<p class="text-[var(--muted)] text-[12px]">nothing notable yet — quiet is good</p>';
+    }
+
+    async function pollOverview() {
+      try {
+        const css = getComputedStyle(document.documentElement);
+        const jobs = [
+          fetch(appURL('/api/clients')).then(r => r.json()),
+          fetch(appURL('/api/events')).then(r => r.json()),
+        ];
+        if (!ovWanData || Date.now() - ovWanAt > 60000) {
+          jobs.push(fetch(appURL('/api/history/system?range=24h')).then(r => r.json()).then(d => { ovWanData = d; ovWanAt = Date.now(); }));
+        }
+        const [cl, evs] = await Promise.all(jobs);
+        document.getElementById('ov-clients').textContent = Array.isArray(cl) ? cl.filter(c => c.online).length : '–';
+        renderTopClients(Array.isArray(cl) ? cl : []);
+        renderEvents(Array.isArray(evs) ? evs : []);
+        renderOverview();
+      } catch (e) { console.error('[overview]', e); }
+    }
+
+    // WAN traffic · 24h chart — lives on the Diagnostics tab (line detail).
+    // Rendered only while that tab is visible; uPlot needs layout width,
+    // which a hidden container doesn't have.
+    async function loadDiagWanChart() {
+      try {
+        if (!ovWanData || Date.now() - ovWanAt > 60000) {
+          ovWanData = await fetch(appURL('/api/history/system?range=24h')).then(r => r.json());
+          ovWanAt = Date.now();
+        }
+        if (!ovWanData || !ovWanData.t || ovWanData.t.length < 2 || !isUPlotReady()) return;
+        const cd = document.getElementById('ov-wanchart');
+        if (!cd || cd.offsetParent === null) return; // tab hidden
+        const W = Math.max(200, cd.clientWidth - 4);
+        ovPlots.forEach(p => { try { p.u.destroy(); } catch (_) {} });
+        const css = getComputedStyle(document.documentElement);
+        ovPlots = [{
+          u: makeChart(cd, W, 130, ovWanData.t, [
+            { label: 'Download (Mbit/s)', data: ovWanData.wanrx, stroke: css.getPropertyValue('--blue').trim(), fill: 'rgba(56,189,248,0.10)' },
+            { label: 'Upload (Mbit/s)', data: ovWanData.wantx, stroke: css.getPropertyValue('--green').trim(), fill: 'rgba(74,222,128,0.10)' },
+          ], 'WAN traffic — download vs upload (Mbit/s)', v => v.toFixed(0), 'ov-x')
+        }];
+      } catch (e) { console.error('[diag-wan]', e); }
+    }
+
+    // Drill-downs from the Overview cards.
+    document.getElementById('ov-internet').addEventListener('click', () => setTab('diag'));
+    document.getElementById('ov-gateway').addEventListener('click', () => setTab('system'));
+
     // ── Boot ──────────────────────────────────────────────────────────────
     seedHistory(); // seed sparklines from server ring buffer before first SSE
+    _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange);
+    _setPillBtns('.incrange-btn', 'incrange', sysIncRange);
+    // Restore the tab the user was on before a reload (e.g. theme toggle).
+    let bootTab = 'overview';
+    try { bootTab = sessionStorage.getItem('cakestats-tab') || 'overview'; } catch (_) {}
+    setTab(['overview', 'diag', 'sqm', 'clients', 'system'].includes(bootTab) ? bootTab : 'overview');
     connect();
 
   }());
