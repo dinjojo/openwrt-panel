@@ -6,7 +6,7 @@
   <title>cake-stats</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap"
         rel="stylesheet" />
   <!-- uPlot — tiny, fast time-series charting library (used in the history modal) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css" />
@@ -48,10 +48,11 @@
       --shadow: none;
       color-scheme: dark;
     }
-    body { font-family: 'Inter', system-ui, sans-serif; transition: background .2s ease; letter-spacing: -0.006em; }
-    .num { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+    html { font-size: 16.5px; }
+    body { font-family: 'Fira Sans', system-ui, sans-serif; transition: background .2s ease; letter-spacing: -0.006em; }
+    .num { font-family: 'Fira Code', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
     /* display role: confident semibold sans for headings and headline values */
-    .display { font-family: 'Inter', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.015em; }
+    .display { font-family: 'Fira Sans', system-ui, sans-serif; font-weight: 600; letter-spacing: -0.015em; }
     /* state glows: health gets a soft halo, not a heavy border */
     .glow-ok   { box-shadow: 0 0 0 1px rgba(74,222,128,.10), 0 0 14px rgba(74,222,128,.10); }
     .glow-warn { box-shadow: 0 0 0 1px rgba(251,191,36,.16), 0 0 14px rgba(251,191,36,.13); }
@@ -122,7 +123,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg>
         <span class="sidebar-label">System</span></button>
     </nav>
-    <div class="pt-3 mt-1 border-t border-[var(--line)] text-[11px]">
+    <div class="pt-3 mt-1 border-t border-[var(--line)] text-[12.5px]">
       <span id="iface-count" class="text-[var(--muted)] sidebar-label"></span>
     </div>
   </aside>
@@ -166,42 +167,42 @@
         <!-- Internet hero: live throughput + 5-min sparkline + exit path -->
         <div id="ov-internet" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 cursor-pointer"
              title="Open line diagnostics (tunnel, latency quality, buffering)">
-          <div class="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <div class="flex items-center justify-between text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
             <span>Internet</span><span class="normal-case tracking-normal font-normal">live &middot; shape of the last 3h</span>
           </div>
           <div class="flex items-end gap-8 mt-3">
             <div>
               <div class="num display text-4xl font-bold leading-none" style="color:var(--blue)"><span id="ov-down">–</span></div>
-              <div class="text-[11px] text-[var(--muted)] mt-1">down &middot; Mbit/s</div>
+              <div class="text-[12.5px] text-[var(--muted)] mt-1">down &middot; Mbit/s</div>
             </div>
             <div>
               <div class="num display text-4xl font-bold leading-none" style="color:var(--green)"><span id="ov-up">–</span></div>
-              <div class="text-[11px] text-[var(--muted)] mt-1">up &middot; Mbit/s</div>
+              <div class="text-[12.5px] text-[var(--muted)] mt-1">up &middot; Mbit/s</div>
             </div>
           </div>
           <canvas id="ov-spark" class="w-full mt-3" height="56"></canvas>
-          <div id="ov-warp" class="text-[11px] mt-2"></div>
-          <div id="ov-wan-foot" class="text-[11px] text-[var(--muted)] mt-1"></div>
+          <div id="ov-warp" class="text-[12.5px] mt-2"></div>
+          <div id="ov-wan-foot" class="text-[12.5px] text-[var(--muted)] mt-1"></div>
         </div>
 
         <!-- Gateway card: gauges, click → System tab -->
         <div id="ov-gateway" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 cursor-pointer"
              title="Open the System tab for full charts">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Gateway</div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Gateway</div>
           <div class="display text-2xl font-semibold mt-1">NanoPi R6C</div>
           <div id="ov-gauges" class="mt-3 space-y-2.5"></div>
         </div>
 
         <!-- Network card: clients online + top talkers + Wi-Fi state -->
         <div id="ov-network" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Network</div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Network</div>
           <div class="flex items-baseline gap-3 mt-1">
             <span id="ov-clients" class="num display text-4xl font-bold">–</span>
             <span class="text-sm text-[var(--muted)]">clients online</span>
           </div>
           <div id="ov-top3" class="mt-3 space-y-2"></div>
           <div class="mt-3 pt-3 border-t border-[var(--line)]/60 cursor-pointer" id="ov-wifi-box" title="Open the Clients tab">
-            <div id="ov-wifi-line" class="text-[12px] text-[var(--muted)]">Wi-Fi — waiting for AP data…</div>
+            <div id="ov-wifi-line" class="text-[13.5px] text-[var(--muted)]">Wi-Fi — waiting for AP data…</div>
             <svg id="ov-wifi-spark" width="100%" height="26" viewBox="0 0 100 26" preserveAspectRatio="none" class="overflow-visible mt-1"></svg>
           </div>
         </div>
@@ -218,13 +219,13 @@
       <div class="grid gap-4 lg:grid-cols-2">
         <!-- Top clients · clickable rows open the client drill-down -->
         <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
           <div id="ov-topclients" class="mt-3 space-y-1"></div>
         </div>
         <!-- Events feed -->
         <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Events</div>
-          <div id="ov-events" class="mt-3 space-y-2 text-[12px]"></div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Events</div>
+          <div id="ov-events" class="mt-3 space-y-2 text-[13.5px]"></div>
         </div>
       </div>
     </section>
@@ -240,35 +241,35 @@
       <!-- Live summary strip -->
       <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Clients online</div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Clients online</div>
           <div id="cl-online" class="num text-2xl font-bold mt-1">–</div>
-          <div id="cl-online-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          <div id="cl-online-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
             <span class="text-[var(--green)]">&#9660;</span> LAN download</div>
           <div id="cl-rx" class="num text-2xl font-bold mt-1 text-[var(--green)]">–</div>
-          <div class="text-[11px] text-[var(--muted)] mt-0.5">all clients, live</div>
+          <div class="text-[12.5px] text-[var(--muted)] mt-0.5">all clients, live</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
             <span class="text-[var(--blue)]">&#9650;</span> LAN upload</div>
           <div id="cl-tx" class="num text-2xl font-bold mt-1 text-[var(--blue)]">–</div>
-          <div class="text-[11px] text-[var(--muted)] mt-0.5">all clients, live</div>
+          <div class="text-[12.5px] text-[var(--muted)] mt-0.5">all clients, live</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top talker now</div>
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top talker now</div>
           <div id="cl-top" class="num text-2xl font-bold mt-1 truncate">&ndash;</div>
-          <div id="cl-top-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+          <div id="cl-top-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
         </div>
       </div>
 
       <!-- Top-talker history -->
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
-          <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
             Top talkers &mdash; download / upload rate</span>
-          <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+          <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
             <button data-clrange="1h"  class="clrange-btn px-2.5 py-1 rounded-md">1H</button>
             <button data-clrange="6h"  class="clrange-btn px-2.5 py-1 rounded-md">6H</button>
             <button data-clrange="24h" class="clrange-btn px-2.5 py-1 rounded-md">24H</button>
@@ -281,7 +282,7 @@
       <!-- Live per-client table -->
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden">
         <div class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
-          <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
             LAN devices &mdash; live
             <span id="cl-orbi-note" class="normal-case tracking-normal font-medium text-[var(--faint)] ml-2"></span></span>
           <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
@@ -313,9 +314,9 @@
     <section id="tab-system" role="tabpanel" class="hidden">
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
-          <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
             Router health &mdash; WAN traffic · temperature · load · memory · connections · internet response time · WAN link errors</span>
-          <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+          <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
             <button data-sysrange="1h"  class="sysrange-btn px-2.5 py-1 rounded-md">1H</button>
             <button data-sysrange="6h"  class="sysrange-btn px-2.5 py-1 rounded-md">6H</button>
             <button data-sysrange="24h" class="sysrange-btn px-2.5 py-1 rounded-md">24H</button>
@@ -332,33 +333,33 @@
 
       <!-- Connection & exit tunnel: WARP state, reconnects, conntrack, unsolicited rate -->
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
-        <div class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)] mb-3">
+        <div class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)] mb-3">
           Exit paths &mdash; WARP tunnel and the direct line</div>
         <div id="conn-strip" class="grid gap-3 grid-cols-2 lg:grid-cols-5">
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Exit tunnel (WARP)</div>
+            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Exit tunnel (WARP)</div>
             <div id="tn-state" class="text-sm font-semibold mt-1">&ndash;</div>
-            <div id="tn-state-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+            <div id="tn-state-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel traffic</div>
+            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel traffic</div>
             <div id="tn-traffic" class="num text-sm font-semibold mt-1">&ndash;</div>
-            <div id="tn-traffic-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+            <div id="tn-traffic-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Direct line (native)</div>
+            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Direct line (native)</div>
             <div id="tn-direct" class="num text-sm font-semibold mt-1">&ndash;</div>
-            <div id="tn-direct-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+            <div id="tn-direct-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel reconnects</div>
+            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel reconnects</div>
             <div id="tn-reconnects" class="num text-sm font-semibold mt-1">&ndash;</div>
-            <div id="tn-reconnects-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+            <div id="tn-reconnects-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Connection table</div>
+            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Connection table</div>
             <div id="tn-conntrack" class="num text-sm font-semibold mt-1">&ndash;</div>
-            <div id="tn-conntrack-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>
+            <div id="tn-conntrack-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
         </div>
       </div>
@@ -368,30 +369,30 @@
       <div class="grid gap-5 lg:grid-cols-2 items-start">
         <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
           <div class="flex items-center justify-between gap-3 mb-3">
-            <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
               Latency quality &mdash; p50 / p95</span>
-            <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+            <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
               <button data-pctrange="24h" class="pctrange-btn px-2.5 py-1 rounded-md">24H</button>
               <button data-pctrange="7d"  class="pctrange-btn px-2.5 py-1 rounded-md">7D</button>
             </div>
           </div>
           <div id="pct-strip" class="grid gap-3 grid-cols-2"></div>
-          <p class="text-[11px] text-[var(--muted)] mt-3 leading-snug">Half your pings are faster than p50, only 5% worse than p95. The "under load" number is the p95 ping during a full-rate download.</p>
+          <p class="text-[12.5px] text-[var(--muted)] mt-3 leading-snug">Half your pings are faster than p50, only 5% worse than p95. The "under load" number is the p95 ping during a full-rate download.</p>
         </div>
 
         <!-- Buffering episodes: how many times, when, and why -->
         <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
           <div class="flex items-center justify-between gap-3 mb-3">
-            <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
               Buffering episodes &mdash; when and why</span>
-            <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+            <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
               <button data-incrange="24h" class="incrange-btn px-2.5 py-1 rounded-md">24H</button>
               <button data-incrange="7d"  class="incrange-btn px-2.5 py-1 rounded-md">7D</button>
               <button data-incrange="30d" class="incrange-btn px-2.5 py-1 rounded-md">30D</button>
             </div>
           </div>
           <div id="inc-summary" class="text-sm font-semibold"></div>
-          <div id="inc-list" class="mt-3 space-y-1.5 text-[12px]"></div>
+          <div id="inc-list" class="mt-3 space-y-1.5 text-[13.5px]"></div>
         </div>
       </div>
 
@@ -399,8 +400,8 @@
            internet-line panels, not at the bottom of the Overview -->
       <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 mb-6">
         <div class="flex items-center justify-between gap-2 mb-2">
-          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">WAN traffic</div>
-          <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">WAN traffic</div>
+          <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
             <button data-wanrange="1h"  class="wanrange-btn px-2.5 py-1 rounded-md">1H</button>
             <button data-wanrange="6h"  class="wanrange-btn px-2.5 py-1 rounded-md">6H</button>
             <button data-wanrange="24h" class="wanrange-btn px-2.5 py-1 rounded-md">24H</button>
@@ -445,7 +446,7 @@
       <div class="flex items-center justify-between px-5 py-3
                   border-b border-[var(--line)] shrink-0 gap-3">
         <span id="modal-title" class="font-bold text-base whitespace-nowrap"></span>
-        <div id="modal-ranges" class="flex items-center gap-1 text-[11px] ml-auto
+        <div id="modal-ranges" class="flex items-center gap-1 text-[12.5px] ml-auto
                     bg-[var(--panel2)] rounded-lg p-0.5">
           <button data-range="live" class="range-btn px-2.5 py-1 rounded-md">LIVE</button>
           <button data-range="1h"  class="range-btn px-2.5 py-1 rounded-md">1H</button>
@@ -473,9 +474,9 @@
                   border-b border-[var(--line)] shrink-0 gap-3 flex-wrap">
         <div class="min-w-0">
           <span id="clm-title" class="font-bold text-base whitespace-nowrap"></span>
-          <div id="clm-sub" class="text-[11px] text-[var(--muted)] num mt-0.5"></div>
+          <div id="clm-sub" class="text-[12.5px] text-[var(--muted)] num mt-0.5"></div>
         </div>
-        <div id="clm-ranges" class="flex items-center gap-1 text-[11px] ml-auto
+        <div id="clm-ranges" class="flex items-center gap-1 text-[12.5px] ml-auto
                     bg-[var(--panel2)] rounded-lg p-0.5">
           <button data-crange="1h"  class="crange-btn px-2.5 py-1 rounded-md">1H</button>
           <button data-crange="6h"  class="crange-btn px-2.5 py-1 rounded-md">6H</button>
@@ -678,11 +679,11 @@
         'preserveAspectRatio="none" class="overflow-visible mt-1"></svg>';
       return (
         '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2 flex flex-col">' +
-          '<div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
+          '<div class="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
             '<span class="w-1.5 h-1.5 rounded-full" style="background:' + dotColor + '"></span>' + label +
           '</div>' +
           '<div id="kpi-' + id + '" class="num display text-2xl font-bold mt-1 leading-tight">&ndash;</div>' +
-          '<div id="kpi-' + id + '-sub" class="text-[11px] text-[var(--muted)] mt-0.5">&nbsp;</div>' +
+          '<div id="kpi-' + id + '-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>' +
           barHTML + sparkHTML +
         '</div>'
       );
@@ -701,7 +702,7 @@
             kpiCard('dr-' + n, 'Drops', 'var(--red)') +
             kpiCard('bl-' + n, 'Waiting packets', 'var(--amber)', { spark: false }) +
           '</div>' +
-          '<div class="text-[10px] text-[var(--faint)] mt-2 text-right hidden sm:block">' +
+          '<div class="text-[11.5px] text-[var(--faint)] mt-2 text-right hidden sm:block">' +
             'tap anywhere in this row for detailed charts &#9658;</div>' +
         '</div>'
       );
@@ -827,15 +828,18 @@
 
     /**
      * Build one uPlot chart inside container and return the uPlot instance.
-     * series: [{ label, data, stroke, fill }]
+     * series: [{ label, data, stroke, fill, detail? }]
      * yFmt:   value => display string for y-axis labels
+     * detail: optional click target for the series — clicking its legend
+     *         entry opens that detail (e.g. the client drill-down) instead
+     *         of uPlot's default, which silently hides the series.
      */
     function makeChart(container, W, H, times, series, title, yFmt, syncKey) {
       const wrap = document.createElement('div');
       wrap.className = 'mb-2';
 
       const lbl = document.createElement('div');
-      lbl.className = 'text-[11px] font-semibold text-[var(--muted)] mb-1 uppercase tracking-widest';
+      lbl.className = 'text-[12.5px] font-semibold text-[var(--muted)] mb-1 uppercase tracking-widest';
       lbl.textContent = title;
       wrap.appendChild(lbl);
 
@@ -851,7 +855,7 @@
           sync: syncKey ? { key: syncKey, scales: ['x'] } : undefined,
         },
         select: { show: false },
-        legend: { show: series.length > 1, live: true },
+        legend: { show: false }, // custom legend below — click shows details, never hides a line
         series: [
           {},   // x — timestamps
           ...series.map(s => ({
@@ -905,7 +909,41 @@
       };
 
       const data = [times, ...series.map(s => s.data)];
-      return new uPlot(opts, data, chartWrap);
+      const u = new uPlot(opts, data, chartWrap);
+
+      // Custom legend: swatch + label per series. Clicking an entry with a
+      // detail callback opens that detail; it never hides the line.
+      if (series.length > 1) {
+        const lg = document.createElement('div');
+        lg.className = 'flex flex-wrap gap-x-4 gap-y-1 mt-1.5';
+        lg.innerHTML = series.map((s, i) => {
+          const clickable = typeof s.detail === 'function';
+          return '<span ' + (clickable ? 'role="button" tabindex="0" style="cursor:pointer"' : '') +
+            ' class="inline-flex items-center gap-1.5 text-[12px] ' + (clickable ? 'hover:underline underline-offset-2' : '') + '"' +
+            (clickable ? ' data-series-detail="' + i + '" title="View details"' : '') + '>' +
+            '<span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:' + s.stroke + '"></span>' +
+            '<span class="text-[var(--muted)]">' + h(s.label) + '</span>' +
+          '</span>';
+        }).join('');
+        if (series.some(s => typeof s.detail === 'function')) {
+          lg.addEventListener('click', e => {
+            const item = e.target.closest('[data-series-detail]');
+            if (!item) return;
+            const fn = series[+item.dataset.seriesDetail].detail;
+            if (typeof fn === 'function') fn();
+          });
+          lg.addEventListener('keydown', e => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const item = e.target.closest('[data-series-detail]');
+            if (!item) return;
+            const fn = series[+item.dataset.seriesDetail].detail;
+            if (typeof fn === 'function') fn();
+          });
+        }
+        wrap.appendChild(lg);
+      }
+
+      return u;
     }
 
     /** Full initial build of all three charts for the modal. */
@@ -1142,7 +1180,7 @@
           const isFirst   = fi === 0;
           const topBorder = isFirst ? 'border-t-2 border-t-[var(--blue)]' : '';
           const groupTag  = isFirst
-            ? `<span class="block text-[10px] text-[var(--blue)] leading-tight mb-0.5 font-semibold">${h(groupLabel)}</span>`
+            ? `<span class="block text-[11.5px] text-[var(--blue)] leading-tight mb-0.5 font-semibold">${h(groupLabel)}</span>`
             : '';
 
           const valueCells = tiers
@@ -1192,7 +1230,7 @@
       ].filter(Boolean).join('<span class="text-[var(--line)] mx-1.5">\u00b7</span>');
 
       const statRow = (label, val, cls = '') =>
-        `<div class="flex flex-col gap-0.5"><span class="text-[10px] uppercase tracking-widest text-[var(--muted)]">${label}</span>` +
+        `<div class="flex flex-col gap-0.5"><span class="text-[11.5px] uppercase tracking-widest text-[var(--muted)]">${label}</span>` +
         `<span class="num text-sm ${cls || ''}">${val}</span></div>`;
 
       const detailsGrid = `
@@ -1212,7 +1250,7 @@
         <details>
           <summary class="px-5 py-2.5 flex items-center gap-2 text-xs text-[var(--muted)] hover:text-white
                           border-t border-[var(--line)]">
-            <span class="chev text-[10px]">&#9654;</span>
+            <span class="chev text-[11.5px]">&#9654;</span>
             Advanced details <span class="text-[var(--faint)]">\u2014 raw counters &amp; per-tin CAKE state</span>
           </summary>
           <div class="px-5 pb-4 space-y-3">
@@ -1564,12 +1602,23 @@
       }
 
       // Group rows: Wi-Fi first (weakest signal on top — problems surface),
-      // then wired, then offline. Each group gets a small header row.
+      // then wired, then offline. Each group gets an accent-banded header
+      // with its icon so the split is unmistakable.
+      const ICON = {
+        wifi: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h.01"/><path d="M2 8.82a15 15 0 0 1 20 0"/><path d="M5 12.859a10 10 0 0 1 14 0"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/></svg>',
+        wired: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>',
+        offline: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
+      };
+      const groupHdr = (label, icon, color) =>
+        '<tr class="pointer-events-none"><td colspan="7" class="px-1 pt-3 pb-1">' +
+        '<div class="flex items-center gap-2 rounded-lg px-3 py-1.5" style="background:color-mix(in srgb, ' + color + ' 9%, transparent); border-left:3px solid ' + color + '">' +
+          '<span class="shrink-0" style="color:' + color + '">' + icon + '</span>' +
+          '<span class="text-[12.5px] font-bold uppercase tracking-widest" style="color:' + color + '">' + label + '</span>' +
+        '</div></td></tr>';
       const isWiFiRow = c => {
         const ob = orbiByMac[(c.mac || '').toUpperCase()];
         return !!(ob && (ob.contype === '2.4G' || ob.contype === '5G'));
       };
-      const groupHdr = label => '<tr class="pointer-events-none"><td colspan="7" class="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' + label + '</td></tr>';
       const online = rows.filter(c => c.online);
       const offline = rows.filter(c => !c.online);
       const wifi = online.filter(isWiFiRow).sort((a, b) => {
@@ -1578,11 +1627,11 @@
       });
       const wired = online.filter(c => !isWiFiRow(c));
       const sec = [];
-      if (wifi.length) sec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true });
-      if (wired.length) sec.push({ label: 'Wired — ' + wired.length, list: wired, wifi: false });
-      if (offline.length) sec.push({ label: 'Offline — ' + offline.length, list: offline, wifi: false });
+      if (wifi.length) sec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true, icon: ICON.wifi, color: 'var(--blue)' });
+      if (wired.length) sec.push({ label: 'Wired — ' + wired.length, list: wired, wifi: false, icon: ICON.wired, color: 'var(--muted)' });
+      if (offline.length) sec.push({ label: 'Offline — ' + offline.length, list: offline, wifi: false, icon: ICON.offline, color: 'var(--faint)' });
 
-      tbody.innerHTML = sec.map(s => groupHdr(s.label) + s.list.map(c => {
+      tbody.innerHTML = sec.map(s => groupHdr(s.label, s.icon, s.color) + s.list.map(c => {
         const dot = c.online
           ? '<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[var(--green)]"></span>online</span>'
           : '<span class="inline-flex items-center gap-1.5 text-[var(--faint)]"><span class="w-2 h-2 rounded-full bg-[var(--faint)]"></span>' +
@@ -1613,7 +1662,7 @@
           ' class="border-b border-[var(--line)]/60 hover:bg-[var(--panel2)]/70">' +
           '<td class="px-4 py-2.5">' +
             '<span class="font-semibold text-[var(--text)]">' + h(c.name || c.mac) + '</span>' +
-            '<span class="num text-[11px] text-[var(--faint)] block">' + (s.wifi ? sigHTML : '') + h(sub) + '</span>' +
+            '<span class="num text-[12.5px] text-[var(--faint)] block">' + (s.wifi ? sigHTML : '') + h(sub) + '</span>' +
           '</td>' +
           '<td class="px-3 py-2.5 text-[var(--muted)]">' + dot + '</td>' +
           '<td class="px-3 py-2.5 text-right num ' + (c.rx_rate > 0 ? 'text-[var(--text)]' : 'text-[var(--faint)]') + '">' + fmtBits(c.rx_rate) + '</td>' +
@@ -1701,6 +1750,7 @@
           label: s.name || s.mac,
           data:  pick(s),
           stroke: CL_COLORS[i % CL_COLORS.length],
+          detail: () => openClientModal(s.mac, s.name || s.mac, s.ip || '', ''),
         })), title, v => fmtBits(v), 'cl-x') });
       };
       mk(rx, s => s.rx, 'Download rate per client (' + h(clientsRange) + ')');
@@ -1737,11 +1787,11 @@
         const pct = shaped > 0 ? ' (' + (sysData.peakdown / shaped * 100).toFixed(0) + '% of the ' + shaped.toFixed(0) + ' Mbit/s shaper)' : '';
         const mini = (label, val, sub, col) =>
           '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2 flex flex-col">' +
-            '<div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
+            '<div class="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
               '<span class="w-1.5 h-1.5 rounded-full" style="background:' + col + '"></span>' + label +
             '</div>' +
             '<div class="num display text-xl font-bold mt-1 leading-tight">' + val + '</div>' +
-            '<div class="text-[11px] text-[var(--muted)] mt-0.5">' + (sub || '&nbsp;') + '</div>' +
+            '<div class="text-[12.5px] text-[var(--muted)] mt-0.5">' + (sub || '&nbsp;') + '</div>' +
           '</div>';
         strip.innerHTML =
           mini('Peak download &middot; 24h', sysData.peakdown.toFixed(0) + ' Mbit/s', 'busiest 5-minute window' + pct, cv('--blue')) +
@@ -1996,9 +2046,9 @@
         const el = document.getElementById('pct-strip');
         const card = (label, big, sub, color) =>
           '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">' +
-          '<div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' + label + '</div>' +
+          '<div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">' + label + '</div>' +
           '<div class="num text-lg font-bold mt-1" style="color:' + color + '">' + big + '</div>' +
-          '<div class="text-[11px] text-[var(--muted)] mt-0.5">' + sub + '</div></div>';
+          '<div class="text-[12.5px] text-[var(--muted)] mt-0.5">' + sub + '</div></div>';
         let html = '';
         (d.targets || []).forEach(tg => {
           html += card('Line latency &middot; ' + h(tg.name),
@@ -2041,7 +2091,7 @@
           const src = ep.source === 'probe' ? 'during the speed check' : 'during live traffic';
           return '<div class="flex items-start gap-2.5">' +
             '<span class="mt-0.5 text-[8px]" style="color:' + (ep.peak_ms > 60 ? 'var(--red)' : 'var(--amber)') + '">&#9679;</span>' +
-            '<span class="num text-[11px] text-[var(--muted)] w-28 shrink-0">' +
+            '<span class="num text-[12.5px] text-[var(--muted)] w-28 shrink-0">' +
             when.toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + '</span>' +
             '<span class="num w-20 shrink-0 font-semibold" style="color:var(--amber)">+' + ep.peak_ms.toFixed(0) + ' ms</span>' +
             '<span class="flex-1 leading-snug">' + h(ep.direction || '—') + ' \u00B7 ' + src +
@@ -2128,11 +2178,11 @@
         return '<div class="rounded-xl border bg-[var(--panel)] px-4 py-3' + glow + '"' +
                ' style="border-color:var(--line);border-left:3px solid ' + col + '">' +
           '<div class="flex items-center gap-2">' +
-            '<span style="color:' + col + '" class="text-[10px]">&#9679;</span>' +
-            '<span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)] truncate">' + h(c.name) + '</span>' +
+            '<span style="color:' + col + '" class="text-[11.5px]">&#9679;</span>' +
+            '<span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)] truncate">' + h(c.name) + '</span>' +
             '<span class="num display text-sm font-bold ml-auto whitespace-nowrap" style="color:' + col + '">' + h(c.value) + '</span>' +
           '</div>' +
-          '<div class="text-[11px] text-[var(--muted)] mt-1.5 leading-snug">' + h(c.detail) + '</div>' +
+          '<div class="text-[12.5px] text-[var(--muted)] mt-1.5 leading-snug">' + h(c.detail) + '</div>' +
         '</div>';
       }).join('');
 
@@ -2164,7 +2214,7 @@
         // Lead value speaks for the group; the dot is its (always ok here) state.
         const tip = members.map(c => c.name + ': ' + c.value).join('   ·   ');
         return '<button type="button" data-tab-jump="' + g.tab + '"' +
-          ' class="inline-flex items-center gap-2 rounded-full border bg-[var(--panel)] px-3.5 py-1.5 text-[11px] cursor-pointer hover:bg-[var(--panel2)] transition-colors"' +
+          ' class="inline-flex items-center gap-2 rounded-full border bg-[var(--panel)] px-3.5 py-1.5 text-[12.5px] cursor-pointer hover:bg-[var(--panel2)] transition-colors"' +
           ' title="' + h(tip) + '" style="border-color:var(--line)">' +
           '<span style="color:' + stateColor('ok') + '" class="text-[8px]">&#9679;</span>' +
           '<span class="uppercase tracking-wider text-[var(--muted)]">' + h(g.label) + '</span>' +
@@ -2182,7 +2232,7 @@
     /** Loose pill for healthy checks that belong to no category group. */
     function pillHTML_one(c) {
       const col = stateColor(c.state);
-      return '<span class="inline-flex items-center gap-1.5 rounded-full border bg-[var(--panel)] px-3 py-1.5 text-[11px]"' +
+      return '<span class="inline-flex items-center gap-1.5 rounded-full border bg-[var(--panel)] px-3 py-1.5 text-[12.5px]"' +
              ' title="' + h(c.detail) + '" style="border-color:var(--line)">' +
         '<span style="color:' + col + '" class="text-[8px]">&#9679;</span>' +
         '<span class="uppercase tracking-wider text-[var(--muted)]">' + h(c.name) + '</span>' +
@@ -2286,11 +2336,11 @@
     function ovGauge(label, val, fmt, frac, col) {
       const pct = Math.max(2, Math.min(100, frac * 100));
       return '<div class="flex items-center gap-3">' +
-        '<span class="text-[11px] uppercase tracking-wider text-[var(--muted)] w-12 shrink-0">' + label + '</span>' +
+        '<span class="text-[12.5px] uppercase tracking-wider text-[var(--muted)] w-12 shrink-0">' + label + '</span>' +
         '<div class="flex-1 h-1.5 rounded-full bg-[var(--panel2)] overflow-hidden">' +
           '<div class="h-full rounded-full" style="width:' + pct.toFixed(0) + '%;background:' + col + '"></div>' +
         '</div>' +
-        '<span class="num text-[12px] font-semibold w-14 text-right">' + fmt + '</span>' +
+        '<span class="num text-[13.5px] font-semibold w-14 text-right">' + fmt + '</span>' +
       '</div>';
     }
 
@@ -2365,20 +2415,20 @@
         return '<div class="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-[var(--panel2)] cursor-pointer tr-client" data-mac="' + h(c.mac) + '"' +
                ' data-name="' + h(name) + '" data-ip="' + h(c.ip) + '" data-vendor="' + h(c.vendor || '') + '"' +
                ' title="Open full connection history">' +
-          '<span class="text-[12px] flex-1 truncate">' + h(name) + '</span>' +
+          '<span class="text-[13.5px] flex-1 truncate">' + h(name) + '</span>' +
           '<div class="w-24 sm:w-40 h-1.5 rounded-full bg-[var(--panel2)] overflow-hidden">' +
             '<div class="h-full rounded-full" style="width:' + (total / max * 100).toFixed(0) + '%;background:var(--blue)"></div>' +
           '</div>' +
-          '<span class="num text-[12px] font-semibold w-16 text-right">' + ovBytes(total) + '</span>' +
+          '<span class="num text-[13.5px] font-semibold w-16 text-right">' + ovBytes(total) + '</span>' +
         '</div>';
-      }).join('') || '<p class="text-[var(--muted)] text-[12px]">no clients yet</p>';
+      }).join('') || '<p class="text-[var(--muted)] text-[13.5px]">no clients yet</p>';
       el.querySelectorAll('.tr-client').forEach(r => {
         r.addEventListener('click', () => openClientModal(r.dataset.mac, r.dataset.name, r.dataset.ip, r.dataset.vendor));
       });
       // Also the Network card mini list (top 3).
       document.getElementById('ov-top3').innerHTML = top.slice(0, 3).map(c => {
         const total = c.rx_total + c.tx_total;
-        return '<div class="flex items-center gap-2 text-[11px]">' +
+        return '<div class="flex items-center gap-2 text-[12.5px]">' +
           '<span class="w-1.5 h-1.5 rounded-full" style="background:var(--green)"></span>' +
           '<span class="flex-1 truncate text-[var(--muted)]">' + h(c.name || c.ip || c.mac) + '</span>' +
           '<span class="num font-semibold">' + ovBytes(total) + '</span></div>';
@@ -2397,12 +2447,12 @@
           : (d.getDate() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         return '<div class="flex items-start gap-2.5">' +
           '<span class="mt-0.5 text-[8px]" style="color:' + sevCol(ev.sev) + '">&#9679;</span>' +
-          '<span class="num text-[11px] text-[var(--muted)] w-24 shrink-0">' + when + '</span>' +
+          '<span class="num text-[12.5px] text-[var(--muted)] w-24 shrink-0">' + when + '</span>' +
           '<span class="flex-1 leading-snug">' + h(ev.msg) +
-            (ev.count > 1 ? ' <span class="num text-[10px] text-[var(--muted)] whitespace-nowrap">&times;' + ev.count + '</span>' : '') +
+            (ev.count > 1 ? ' <span class="num text-[11.5px] text-[var(--muted)] whitespace-nowrap">&times;' + ev.count + '</span>' : '') +
           '</span>' +
         '</div>';
-      }).join('') || '<p class="text-[var(--muted)] text-[12px]">nothing notable yet — quiet is good</p>';
+      }).join('') || '<p class="text-[var(--muted)] text-[13.5px]">nothing notable yet — quiet is good</p>';
     }
 
     async function pollOverview() {
