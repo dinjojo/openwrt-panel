@@ -14,10 +14,11 @@ import (
 
 // Event is one notable occurrence.
 type Event struct {
-	At   int64  `json:"at"`  // unix seconds
-	Kind string `json:"kind"` // wan | warp | reboot | probe | bloat | conntrack | config | monitor
-	Sev  string `json:"sev"`  // ok | warn | crit | info
-	Msg  string `json:"msg"`
+	At    int64  `json:"at"`           // unix seconds
+	Kind  string `json:"kind"`         // wan | warp | reboot | probe | bloat | conntrack | config | monitor
+	Sev   string `json:"sev"`          // ok | warn | crit | info
+	Msg   string `json:"msg"`
+	Count int    `json:"count,omitempty"` // collapsed repeats: 27 restarts, N flaps
 }
 
 // ringCap is generous on purpose: 1000 entries is still ~100 KB on disk, and
@@ -32,31 +33,86 @@ type Store struct {
 	path   string
 }
 
-// New loads any persisted events and returns the store.
+// New loads any persisted events and returns the store. The loaded ring is
+// compacted, so a history of repeated events (a stack of restarts from many
+// deploys, say) heals into single counted entries.
 func New(path string) *Store {
 	s := &Store{path: path}
 	if b, err := os.ReadFile(path); err == nil {
-		_ = json.Unmarshal(b, &s.events)
+		if _ = json.Unmarshal(b, &s.events); err == nil {
+			s.events = collapse(s.events)
+		}
 	}
 	return s
 }
 
-// Add appends an event (newest first), persists the ring and drops the tail
-// beyond the capacity.
+// Add appends an event (newest first), collapses repeats and persists the
+// ring. Two collapses keep the feed readable: a restart marker always merges
+// into a leading run of restart markers (deploys during development would
+// otherwise bury the feed), and an identical message within ten minutes
+// becomes a counted flap instead of a wall of entries.
 func (s *Store) Add(kind, sev, msg string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append([]Event{{At: time.Now().Unix(), Kind: kind, Sev: sev, Msg: msg}}, s.events...)
+	ev := Event{At: time.Now().Unix(), Kind: kind, Sev: sev, Msg: msg, Count: 1}
+	if len(s.events) > 0 {
+		last := s.events[0]
+		lastCount := last.Count
+		if lastCount < 1 {
+			lastCount = 1 // entries written before counting existed
+		}
+		if kind == "monitor" && last.Kind == "monitor" {
+			ev.Count = lastCount + 1
+		} else if last.Kind == kind && last.Sev == sev && last.Msg == msg && ev.At-last.At < 600 {
+			ev.Count = lastCount + 1
+		}
+	}
+	if ev.Count > 1 {
+		s.events = s.events[1:] // the merged entry is superseded
+	}
+	s.events = append([]Event{ev}, s.events...)
 	if len(s.events) > ringCap {
 		s.events = s.events[:ringCap]
 	}
-	if s.path != "" {
-		if b, err := json.Marshal(s.events); err == nil {
-			_ = os.MkdirAll("/opt/monitoring", 0o755)
-			tmp := s.path + ".tmp"
-			if os.WriteFile(tmp, b, 0o644) == nil {
-				_ = os.Rename(tmp, s.path)
+	s.persistLocked()
+}
+
+// collapse merges consecutive runs of the same event (monitor restarts,
+// identical flaps within ten minutes) into counted entries. Input and output
+// are newest-first.
+func collapse(events []Event) []Event {
+	var out []Event
+	for _, ev := range events {
+		if ev.Count < 1 {
+			ev.Count = 1 // entries written before counting existed
+		}
+		if len(out) > 0 {
+			last := &out[len(out)-1]
+			same := last.Kind == ev.Kind &&
+				(ev.Kind == "monitor" ||
+					(last.Sev == ev.Sev && last.Msg == ev.Msg && last.At-ev.At < 600))
+			if same {
+				last.At = ev.At
+				last.Msg = ev.Msg
+				last.Sev = ev.Sev
+				last.Count += ev.Count
+				continue
 			}
+		}
+		out = append(out, ev)
+	}
+	return out
+}
+
+func (s *Store) persistLocked() {
+	if s.path == "" {
+		return
+	}
+	if b, err := json.Marshal(s.events); err == nil {
+		_ = os.MkdirAll("/opt/monitoring", 0o755)
+		tmp := s.path + ".tmp"
+		if os.WriteFile(tmp, b, 0o644) == nil {
+			_ = os.Rename(tmp, s.path)
 		}
 	}
 }

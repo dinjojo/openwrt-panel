@@ -2398,7 +2398,9 @@
         return '<div class="flex items-start gap-2.5">' +
           '<span class="mt-0.5 text-[8px]" style="color:' + sevCol(ev.sev) + '">&#9679;</span>' +
           '<span class="num text-[11px] text-[var(--muted)] w-24 shrink-0">' + when + '</span>' +
-          '<span class="flex-1 leading-snug">' + h(ev.msg) + '</span>' +
+          '<span class="flex-1 leading-snug">' + h(ev.msg) +
+            (ev.count > 1 ? ' <span class="num text-[10px] text-[var(--muted)] whitespace-nowrap">&times;' + ev.count + '</span>' : '') +
+          '</span>' +
         '</div>';
       }).join('') || '<p class="text-[var(--muted)] text-[12px]">nothing notable yet — quiet is good</p>';
     }
