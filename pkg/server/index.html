@@ -41,7 +41,7 @@
          small steps, never pure black, 4.5:1 on text. Muted/faint kept
          bright — small grey text on navy must still read. */
       --bg: #0F172A; --panel: #1A2438; --panel2: #223050; --line: #31415F;
-      --text: #F3F6FA; --muted: #AEB9CC; --faint: #8B99B0;
+      --text: #F8FAFF; --muted: #D4DDEC; --faint: #B4C1D9;
       --green: #7EE2A8; --amber: #FBBF24; --red: #F87171; --blue: #38BDF8;
       --head: #16223A; --accent-text: #0F172A;
       --head-wash: linear-gradient(180deg, rgba(56,189,248,0.07), transparent);
@@ -88,7 +88,7 @@
   </script>
 </head>
 
-<body class="bg-[var(--bg)] text-[var(--text)] min-h-screen text-sm antialiased">
+<body class="bg-[var(--bg)] text-[var(--text)] min-h-screen text-sm">
 
   <!-- ═══ Shell: collapsible sidebar (desktop) + content column ═════════════ -->
   <div class="flex min-h-screen">
@@ -167,7 +167,7 @@
         <!-- Internet hero: live throughput + 5-min sparkline + exit path -->
         <div id="ov-internet" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 cursor-pointer"
              title="Open line diagnostics (tunnel, latency quality, buffering)">
-          <div class="flex items-center justify-between text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <div class="flex items-center justify-between text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
             <span>Internet</span><span class="normal-case tracking-normal font-normal">live &middot; shape of the last 3h</span>
           </div>
           <div class="flex items-end gap-8 mt-3">
@@ -188,14 +188,14 @@
         <!-- Gateway card: gauges, click → System tab -->
         <div id="ov-gateway" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 cursor-pointer"
              title="Open the System tab for full charts">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Gateway</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Gateway</div>
           <div class="display text-2xl font-semibold mt-1">NanoPi R6C</div>
           <div id="ov-gauges" class="mt-3 space-y-2.5"></div>
         </div>
 
         <!-- Network card: clients online + top talkers + Wi-Fi state -->
         <div id="ov-network" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Network</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Network</div>
           <div class="flex items-baseline gap-3 mt-1">
             <span id="ov-clients" class="num display text-4xl font-bold">–</span>
             <span class="text-sm text-[var(--muted)]">clients online</span>
@@ -219,12 +219,12 @@
       <div class="grid gap-4 lg:grid-cols-2">
         <!-- Top clients · clickable rows open the client drill-down -->
         <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
           <div id="ov-topclients" class="mt-3 space-y-1"></div>
         </div>
         <!-- Events feed -->
         <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Events</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Events</div>
           <div id="ov-events" class="mt-3 space-y-2 text-[13.5px]"></div>
         </div>
       </div>
@@ -241,24 +241,24 @@
       <!-- Live summary strip -->
       <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Clients online</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Clients online</div>
           <div id="cl-online" class="num text-2xl font-bold mt-1">–</div>
           <div id="cl-online-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
             <span class="text-[var(--green)]">&#9660;</span> LAN download</div>
           <div id="cl-rx" class="num text-2xl font-bold mt-1 text-[var(--green)]">–</div>
           <div class="text-[12.5px] text-[var(--muted)] mt-0.5">all clients, live</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
             <span class="text-[var(--blue)]">&#9650;</span> LAN upload</div>
           <div id="cl-tx" class="num text-2xl font-bold mt-1 text-[var(--blue)]">–</div>
           <div class="text-[12.5px] text-[var(--muted)] mt-0.5">all clients, live</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Top talker now</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Top talker now</div>
           <div id="cl-top" class="num text-2xl font-bold mt-1 truncate">&ndash;</div>
           <div id="cl-top-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
         </div>
@@ -267,7 +267,7 @@
       <!-- Top-talker history -->
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
-          <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
             Top talkers &mdash; download / upload rate</span>
           <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
             <button data-clrange="1h"  class="clrange-btn px-2.5 py-1 rounded-md">1H</button>
@@ -282,7 +282,7 @@
       <!-- Live per-client table -->
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden">
         <div class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
-          <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
             LAN devices &mdash; live
             <span id="cl-orbi-note" class="normal-case tracking-normal font-medium text-[var(--faint)] ml-2"></span></span>
           <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
@@ -314,7 +314,7 @@
     <section id="tab-system" role="tabpanel" class="hidden">
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
-          <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+          <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
             Router health &mdash; WAN traffic · temperature · load · memory · connections · internet response time · WAN link errors</span>
           <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
             <button data-sysrange="1h"  class="sysrange-btn px-2.5 py-1 rounded-md">1H</button>
@@ -333,31 +333,31 @@
 
       <!-- Connection & exit tunnel: WARP state, reconnects, conntrack, unsolicited rate -->
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
-        <div class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)] mb-3">
+        <div class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)] mb-3">
           Exit paths &mdash; WARP tunnel and the direct line</div>
         <div id="conn-strip" class="grid gap-3 grid-cols-2 lg:grid-cols-5">
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Exit tunnel (WARP)</div>
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Exit tunnel (WARP)</div>
             <div id="tn-state" class="text-sm font-semibold mt-1">&ndash;</div>
             <div id="tn-state-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel traffic</div>
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Tunnel traffic</div>
             <div id="tn-traffic" class="num text-sm font-semibold mt-1">&ndash;</div>
             <div id="tn-traffic-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Direct line (native)</div>
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Direct line (native)</div>
             <div id="tn-direct" class="num text-sm font-semibold mt-1">&ndash;</div>
             <div id="tn-direct-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Tunnel reconnects</div>
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Tunnel reconnects</div>
             <div id="tn-reconnects" class="num text-sm font-semibold mt-1">&ndash;</div>
             <div id="tn-reconnects-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
           <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
-            <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">Connection table</div>
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Connection table</div>
             <div id="tn-conntrack" class="num text-sm font-semibold mt-1">&ndash;</div>
             <div id="tn-conntrack-sub" class="text-[12.5px] text-[var(--muted)] mt-0.5">&nbsp;</div>
           </div>
@@ -369,7 +369,7 @@
       <div class="grid gap-5 lg:grid-cols-2 items-start">
         <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
           <div class="flex items-center justify-between gap-3 mb-3">
-            <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
               Latency quality &mdash; p50 / p95</span>
             <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
               <button data-pctrange="24h" class="pctrange-btn px-2.5 py-1 rounded-md">24H</button>
@@ -383,7 +383,7 @@
         <!-- Buffering episodes: how many times, when, and why -->
         <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
           <div class="flex items-center justify-between gap-3 mb-3">
-            <span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">
+            <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
               Buffering episodes &mdash; when and why</span>
             <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
               <button data-incrange="24h" class="incrange-btn px-2.5 py-1 rounded-md">24H</button>
@@ -400,7 +400,7 @@
            internet-line panels, not at the bottom of the Overview -->
       <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 mb-6">
         <div class="flex items-center justify-between gap-2 mb-2">
-          <div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">WAN traffic</div>
+          <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">WAN traffic</div>
           <div class="flex items-center gap-1 text-[12.5px] bg-[var(--panel2)] rounded-lg p-0.5">
             <button data-wanrange="1h"  class="wanrange-btn px-2.5 py-1 rounded-md">1H</button>
             <button data-wanrange="6h"  class="wanrange-btn px-2.5 py-1 rounded-md">6H</button>
@@ -679,7 +679,7 @@
         'preserveAspectRatio="none" class="overflow-visible mt-1"></svg>';
       return (
         '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2 flex flex-col">' +
-          '<div class="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
+          '<div class="flex items-center gap-2 text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">' +
             '<span class="w-1.5 h-1.5 rounded-full" style="background:' + dotColor + '"></span>' + label +
           '</div>' +
           '<div id="kpi-' + id + '" class="num display text-2xl font-bold mt-1 leading-tight">&ndash;</div>' +
@@ -1787,7 +1787,7 @@
         const pct = shaped > 0 ? ' (' + (sysData.peakdown / shaped * 100).toFixed(0) + '% of the ' + shaped.toFixed(0) + ' Mbit/s shaper)' : '';
         const mini = (label, val, sub, col) =>
           '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2 flex flex-col">' +
-            '<div class="flex items-center gap-2 text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">' +
+            '<div class="flex items-center gap-2 text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">' +
               '<span class="w-1.5 h-1.5 rounded-full" style="background:' + col + '"></span>' + label +
             '</div>' +
             '<div class="num display text-xl font-bold mt-1 leading-tight">' + val + '</div>' +
@@ -2046,7 +2046,7 @@
         const el = document.getElementById('pct-strip');
         const card = (label, big, sub, color) =>
           '<div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">' +
-          '<div class="text-[11.5px] font-semibold uppercase tracking-widest text-[var(--muted)]">' + label + '</div>' +
+          '<div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">' + label + '</div>' +
           '<div class="num text-lg font-bold mt-1" style="color:' + color + '">' + big + '</div>' +
           '<div class="text-[12.5px] text-[var(--muted)] mt-0.5">' + sub + '</div></div>';
         let html = '';
@@ -2179,7 +2179,7 @@
                ' style="border-color:var(--line);border-left:3px solid ' + col + '">' +
           '<div class="flex items-center gap-2">' +
             '<span style="color:' + col + '" class="text-[11.5px]">&#9679;</span>' +
-            '<span class="text-[12.5px] font-semibold uppercase tracking-widest text-[var(--muted)] truncate">' + h(c.name) + '</span>' +
+            '<span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)] truncate">' + h(c.name) + '</span>' +
             '<span class="num display text-sm font-bold ml-auto whitespace-nowrap" style="color:' + col + '">' + h(c.value) + '</span>' +
           '</div>' +
           '<div class="text-[12.5px] text-[var(--muted)] mt-1.5 leading-snug">' + h(c.detail) + '</div>' +
