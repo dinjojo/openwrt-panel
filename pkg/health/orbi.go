@@ -2,6 +2,7 @@ package health
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/galpt/cake-stats/pkg/orbi"
@@ -44,4 +45,47 @@ func orbiLabel(st orbi.State) string {
 		return st.Model
 	}
 	return "Orbi AP"
+}
+
+// evalWifiSignal watches the weakest client on the mesh. A single client
+// far from the AP drags its own experience; only severe weakness signals
+// a placement or interference problem worth acting on.
+func evalWifiSignal(op *orbi.Poller) Check {
+	const name = "Wi-Fi signal"
+	st := op.Snapshot()
+	if st.Busy || len(st.Devices) == 0 {
+		return Check{Name: name, State: StateUnknown, Value: "—",
+			Detail: "no fresh Wi-Fi device list from the AP"}
+	}
+	weakest := -1
+	who := ""
+	band := ""
+	for _, d := range st.Devices {
+		if d.ConnType != "2.4G" && d.ConnType != "5G" {
+			continue
+		}
+		if weakest == -1 || d.Signal < weakest {
+			weakest, who, band = d.Signal, d.Name, d.ConnType
+		}
+	}
+	if weakest == -1 {
+		return Check{Name: name, State: StateUnknown, Value: "—",
+			Detail: "no wireless clients are connected right now"}
+	}
+	detail := "weakest client is " + who + " on " + bandLabel(band) +
+		" — for reference, 70%+ is strong, 50–70% is usable, below 50% shows in slow speeds and dropouts"
+	if weakest < 35 {
+		return Check{Name: name, State: StateCrit, Value: strconv.Itoa(weakest) + "%", Detail: detail}
+	}
+	if weakest < 50 {
+		return Check{Name: name, State: StateWarn, Value: strconv.Itoa(weakest) + "%", Detail: detail}
+	}
+	return Check{Name: name, State: StateOK, Value: strconv.Itoa(weakest) + "%", Detail: detail}
+}
+
+func bandLabel(ct string) string {
+	if ct == "2.4G" {
+		return "2.4 GHz"
+	}
+	return "5 GHz"
 }

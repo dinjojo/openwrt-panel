@@ -193,7 +193,7 @@
           <div id="ov-gauges" class="mt-3 space-y-2.5"></div>
         </div>
 
-        <!-- Network card: clients online + top talkers + Wi-Fi state -->
+        <!-- Network card: clients online + top talkers -->
         <div id="ov-network" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
           <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Network</div>
           <div class="flex items-baseline gap-3 mt-1">
@@ -201,10 +201,6 @@
             <span class="text-sm text-[var(--muted)]">clients online</span>
           </div>
           <div id="ov-top3" class="mt-3 space-y-2"></div>
-          <div class="mt-3 pt-3 border-t border-[var(--line)]/60 cursor-pointer" id="ov-wifi-box" title="Open the Clients tab">
-            <div id="ov-wifi-line" class="text-[13.5px] text-[var(--muted)]">Wi-Fi — waiting for AP data…</div>
-            <svg id="ov-wifi-spark" width="100%" height="26" viewBox="0 0 100 26" preserveAspectRatio="none" class="overflow-visible mt-1"></svg>
-          </div>
         </div>
       </div>
 
@@ -217,6 +213,26 @@
       </section>
 
       <div class="grid gap-4 lg:grid-cols-2">
+        <!-- Wi-Fi section: per-AP and per-band breakdown, weakest links,
+             signal trend — everything the mesh radios report. -->
+        <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 lg:col-span-2">
+          <div class="flex items-center justify-between">
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Wi-Fi &middot; mesh radios</div>
+            <button id="ov-wifi-open" class="text-[12.5px] text-[var(--muted)] hover:text-[var(--text)] transition-colors"
+                    title="Open the Clients tab">all clients &#9656;</button>
+          </div>
+          <div id="ov-wifi-grid" class="grid gap-4 sm:grid-cols-2 mt-3">
+            <div id="ov-wifi-aps" class="space-y-2"></div>
+            <div id="ov-wifi-bands" class="space-y-2"></div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-[var(--line)]/60 flex items-end justify-between gap-4">
+            <div id="ov-wifi-line" class="text-[13.5px] text-[var(--muted)]">Wi-Fi — waiting for AP data&hellip;</div>
+            <div class="shrink-0 w-40">
+              <div class="text-[11.5px] text-[var(--muted)] text-right">clients online &middot; 24h</div>
+              <svg id="ov-wifi-spark" width="100%" height="26" viewBox="0 0 100 26" preserveAspectRatio="none" class="overflow-visible mt-1"></svg>
+            </div>
+          </div>
+        </div>
         <!-- Top clients · clickable rows open the client drill-down -->
         <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
           <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
@@ -1528,13 +1544,23 @@
     // Orbi AP attached-device info (band, device type) joined into the
     // client rows by MAC; refreshed on a slower cadence than live rates.
     let orbiByMac = {};
+    let orbiApNames = {}; // satellite MAC -> friendly name (RBS50…)
+    let orbiRouterName = 'Orbi'; // model of the AP itself, from /api/orbi
     let orbiAt = 0;
     async function loadOrbi() {
       try {
         const d = await fetch(appURL('/api/orbi')).then(r => r.json());
         const m = {};
-        (d.devices || []).forEach(dev => { m[(dev.mac || '').toUpperCase()] = dev; });
+        const apn = {};
+        (d.devices || []).forEach(dev => {
+          m[(dev.mac || '').toUpperCase()] = dev;
+          if (dev.contype === '-') { // satellites list themselves with "-"
+            apn[(dev.mac || '').toUpperCase()] = (dev.name && dev.name.toLowerCase() !== 'unknown' ? dev.name : dev.devtype) || dev.mac;
+          }
+        });
         orbiByMac = m;
+        orbiApNames = apn;
+        orbiRouterName = d.model || orbiRouterName;
         orbiAt = Date.now();
         const el = document.getElementById('cl-orbi-note');
         if (el) el.textContent = d.reachable
@@ -1546,26 +1572,78 @@
       } catch (_) {}
     }
 
-    /** Overview Wi-Fi strip: counts per band, weakest client, slowest link. */
+    /** Overview Wi-Fi card: per-AP rows, per-band rows, weakest links. */
+    const ICON_ROUTER = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6.01 18H6"/><path d="M10.01 18H10"/><path d="M15 18v-4"/><path d="M17.7 7.7a7.5 7.5 0 0 0-11.4 0"/><path d="M20.1 4.6a11 11 0 0 0-16.2 0"/></svg>';
     function renderOverviewWifi(d) {
       const el = document.getElementById('ov-wifi-line');
       if (!el) return;
-      if (!d.reachable) { el.textContent = 'Wi-Fi — AP not responding'; return; }
+      if (!d.reachable) {
+        el.textContent = 'Wi-Fi — AP not responding';
+        document.getElementById('ov-wifi-aps').innerHTML = '';
+        document.getElementById('ov-wifi-bands').innerHTML = '';
+        return;
+      }
       const devs = d.devices || [];
       const wifi = devs.filter(x => x.contype === '2.4G' || x.contype === '5G');
-      const n24 = wifi.filter(x => x.contype === '2.4G').length;
-      const n5 = wifi.length - n24;
+      const nm = x => h((x.name && x.name.toLowerCase() !== 'unknown' ? x.name : x.devtype) || x.mac);
+      const sigCol = s => s >= 70 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--red)';
+
+      // Per-AP unit: clients report which unit (router or satellite) they
+      // associate through. Satellites list themselves with contype "-";
+      // the router itself never appears, so unknown AP MACs are the model.
+      const sats = {};
+      devs.forEach(x => {
+        if (x.contype === '-') sats[(x.mac || '').toUpperCase()] = x;
+      });
+      const perAp = {};
+      for (const x of wifi) {
+        const k = (x.conn_orbi || '').toUpperCase();
+        (perAp[k] = perAp[k] || []).push(x);
+      }
+      const apRows = Object.keys(perAp).sort((a, b) => perAp[b].length - perAp[a].length).map(mac => {
+        const unit = sats[mac], list = perAp[mac];
+        const label = unit ? nm(unit) : ((d.model || 'Orbi router') + ' · router');
+        const n24 = list.filter(x => x.contype === '2.4G').length;
+        const weakest = list.length ? Math.min(...list.map(x => x.signal)) : null;
+        return '<div class="flex items-center gap-3 rounded-lg px-3 py-2" style="background:var(--panel2)">' +
+          '<span class="shrink-0" style="color:var(--accent)">' + ICON_ROUTER + '</span>' +
+          '<div class="min-w-0 flex-1">' +
+            '<div class="text-[13.5px] font-semibold text-[var(--text)] truncate">' + label + '</div>' +
+            '<div class="text-[12.5px] text-[var(--muted)]">' + list.length + ' client' + (list.length === 1 ? '' : 's') +
+              (list.length ? ' · ' + (list.length - n24) + '× 5 GHz' + (n24 ? ' · ' + n24 + '× 2.4 GHz' : '') : '') + '</div>' +
+          '</div>' +
+          (weakest != null ? '<div class="num text-[13.5px] font-semibold" style="color:' + sigCol(weakest) + '" title="weakest client signal">' + weakest + '%</div>' : '') +
+        '</div>';
+      }).join('');
+      document.getElementById('ov-wifi-aps').innerHTML = apRows ||
+        '<div class="text-[13.5px] text-[var(--muted)]">No wireless clients right now.</div>';
+
+      // Per-band: load spread and radio conditions on each band.
+      const bandRow = (label, list) => {
+        if (!list.length) return '';
+        const weakest = Math.min(...list.map(x => x.signal));
+        const avg = Math.round(list.reduce((a, x) => a + (x.signal || 0), 0) / list.length);
+        return '<div class="flex items-center gap-3 rounded-lg px-3 py-2" style="background:var(--panel2)">' +
+          '<span class="shrink-0 text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)] w-20 text-right">' + label + '</span>' +
+          '<div class="min-w-0 flex-1 text-[13.5px] text-[var(--text)]">' + list.length + ' client' + (list.length === 1 ? '' : 's') +
+            ' <span class="text-[var(--muted)]">· avg signal ' + avg + '%</span></div>' +
+          '<div class="num text-[13.5px] font-semibold" style="color:' + sigCol(weakest) + '" title="weakest client signal">' + weakest + '%</div>' +
+        '</div>';
+      };
+      document.getElementById('ov-wifi-bands').innerHTML =
+        bandRow('5 GHz', wifi.filter(x => x.contype === '5G')) +
+        bandRow('2.4 GHz', wifi.filter(x => x.contype === '2.4G')) ||
+        '<div class="text-[13.5px] text-[var(--muted)]">No wireless clients right now.</div>';
+
       let weakest = null, slowest = null;
       for (const x of wifi) {
         if (!weakest || x.signal < weakest.signal) weakest = x;
         if (!slowest || (x.linkspeed_mbps || 0) < (slowest.linkspeed_mbps || 0)) slowest = x;
       }
-      const nm = x => h((x.name && x.name.toLowerCase() !== 'unknown' ? x.name : x.devtype) || x.mac);
-      const wCol = !weakest ? '' : (weakest.signal >= 70 ? 'var(--green)' : weakest.signal >= 50 ? 'var(--amber)' : 'var(--red)');
+      const wCol = !weakest ? '' : sigCol(weakest.signal);
       el.innerHTML =
         '<span class="font-semibold text-[var(--text)]">' + wifi.length + ' on Wi-Fi</span>' +
-        '<span class="text-[var(--muted)]"> · ' + n5 + '× 5 GHz' + (n24 ? ' · ' + n24 + '× 2.4 GHz' : '') + '</span>' +
-        (weakest ? '<span class="block mt-0.5 text-[var(--muted)]">weakest: <span style="color:' + wCol + '">' + nm(weakest) + ' ' + weakest.signal + '%</span>' +
+        (weakest ? '<span class="block mt-0.5">weakest: <span style="color:' + wCol + '">' + nm(weakest) + ' ' + weakest.signal + '%</span>' +
           (slowest && slowest.linkspeed_mbps ? ' · slowest link: ' + nm(slowest) + ' ' + slowest.linkspeed_mbps + ' Mbit/s' : '') + '</span>' : '');
     }
 
@@ -1650,7 +1728,7 @@
             bars += '<span style="display:inline-block;width:3px;height:' + hs[i] + 'px;border-radius:1px;background:' + (i < lvl ? col : 'var(--line)') + '"></span>';
           }
           sigHTML = '<span class="inline-flex items-end gap-[2px] mr-1 align-middle">' + bars + '</span>';
-          obSub = 'Orbi · ' + obBand(ob.contype) + ' · ' + sig + '%' +
+          obSub = 'Orbi · ' + (orbiApNames[(ob.conn_orbi || '').toUpperCase()] || orbiRouterName) + ' · ' + obBand(ob.contype) + ' · ' + sig + '%' +
             (ob.linkspeed_mbps ? ' · ' + ob.linkspeed_mbps + ' Mbit/s' : '');
         } else if (ob && ob.contype !== '-') {
           obSub = 'Orbi · wired';
@@ -1910,8 +1988,8 @@
       plot([{ label: 'connections', data: d.conns, stroke: cv('--amber') }],
         'Active connections', v => fmtNum(v));
 
-      // Wi-Fi signal history — only exists for clients that connect over
-      // the Orbi's radio; silently skipped for wired devices.
+      // Wi-Fi signal + link-speed history — only exist for clients that
+      // connect over the Orbi's radio; silently skipped for wired devices.
       try {
         const sr = await fetch(appURL('/api/history/orbi?mac=' +
           encodeURIComponent(clModal.mac) + '&range=' + encodeURIComponent(clModal.range)));
@@ -1925,6 +2003,20 @@
             clModal.plots.push({ u: makeChart(cd, W, H, st,
               [{ label: 'signal', data: sv, stroke: cv('--green') }],
               'Wi-Fi signal (Orbi)', v2 => v2.toFixed(0) + '%', 'clm-x') });
+          }
+        }
+        const lr = await fetch(appURL('/api/history/orbi?metric=link&mac=' +
+          encodeURIComponent(clModal.mac) + '&range=' + encodeURIComponent(clModal.range)));
+        if (lr.ok) {
+          const bands = await lr.json();
+          const t = [], v = [];
+          (bands || []).forEach(s => { t.push(...s.t); v.push(...s.v); });
+          if (t.length >= 2 && clModal.mac) {
+            const order = t.map((x, i) => [x, v[i]]).sort((a, b) => a[0] - b[0]);
+            const st = order.map(p => p[0]), sv = order.map(p => p[1]);
+            clModal.plots.push({ u: makeChart(cd, W, H, st,
+              [{ label: 'link', data: sv, stroke: cv('--accent') }],
+              'Wi-Fi link rate (Orbi)', v2 => v2.toFixed(0) + ' Mbit/s', 'clm-x') });
           }
         }
       } catch (_) {}
@@ -2508,7 +2600,7 @@
 
     // Drill-downs from the Overview cards.
     document.getElementById('ov-internet').addEventListener('click', () => setTab('diag'));
-    document.getElementById('ov-wifi-box').addEventListener('click', () => setTab('clients'));
+    document.getElementById('ov-wifi-open').addEventListener('click', () => setTab('clients'));
     document.getElementById('ov-gateway').addEventListener('click', () => setTab('system'));
     // Health group pills jump to the tab that owns that category.
     document.addEventListener('click', e => {

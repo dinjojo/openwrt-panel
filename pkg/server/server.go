@@ -902,7 +902,11 @@ func (s *Server) handleAPIHistoryOrbi(c fiber.Ctx) error {
 			}
 			return -1
 		}, strings.ToUpper(mac))
-		query = `orbi_client_signal{mac="` + safe + `"}`
+		metric := "orbi_client_signal"
+		if c.Query("metric") == "link" {
+			metric = "orbi_client_linkspeed"
+		}
+		query = metric + `{mac="` + safe + `"}`
 	}
 
 	series, err := s.vmc.QueryRange(c.Context(), query, start, end, spec.step)

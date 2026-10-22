@@ -224,6 +224,7 @@ func (p *Poller) pushVM(devs []Device) {
 		return
 	}
 	var b24, b5, wired int
+	apCount := map[string]int{} // AP-unit MAC -> clients served
 	var b strings.Builder
 	ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	for _, d := range devs {
@@ -236,14 +237,21 @@ func (p *Poller) pushVM(devs []Device) {
 			wired++
 			continue // wired clients have no radio story
 		}
+		apCount[d.ConnOrbi]++
 		name := sanitizeLabel(d.Name)
 		mac := sanitizeLabel(d.MAC)
 		b.WriteString("orbi_client_signal{mac=\"" + mac + "\",name=\"" + name + "\",band=\"" + d.ConnType + "\"} " +
 			strconv.Itoa(d.Signal) + " " + ts + "\n")
+		b.WriteString("orbi_client_linkspeed{mac=\"" + mac + "\",name=\"" + name + "\",band=\"" + d.ConnType + "\"} " +
+			strconv.FormatFloat(d.Linkspeed, 'f', -1, 64) + " " + ts + "\n")
 	}
 	b.WriteString("orbi_wifi_clients{band=\"2.4G\"} " + strconv.Itoa(b24) + " " + ts + "\n")
 	b.WriteString("orbi_wifi_clients{band=\"5G\"} " + strconv.Itoa(b5) + " " + ts + "\n")
 	b.WriteString("orbi_wired_clients " + strconv.Itoa(wired) + " " + ts + "\n")
+	for apMac, n := range apCount {
+		label := sanitizeLabel(p.apNameFor(devs, apMac))
+		b.WriteString("orbi_ap_clients{ap=\"" + label + "\"} " + strconv.Itoa(n) + " " + ts + "\n")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := p.vmc.Import(ctx, b.String()); err != nil {
@@ -418,8 +426,10 @@ func parseRate(s string) float64 {
 	return f
 }
 
-// diffEvents emits join/leave events for Wi-Fi clients (wired joins are
-// ordinary DHCP/bridge events; Wi-Fi associations are the AP's story).
+// diffEvents emits join/leave/move events for Wi-Fi clients (wired joins
+// are ordinary DHCP/bridge events; Wi-Fi associations are the AP's story).
+// Moves cover roaming: a client switching AP unit (RBR50 ↔ RBS50) or
+// band (5 GHz ↔ 2.4 GHz) — the mesh working as designed, but worth a line.
 func (p *Poller) diffEvents(devs []Device) {
 	if p.onEvent == nil {
 		return
@@ -428,7 +438,7 @@ func (p *Poller) diffEvents(devs []Device) {
 	prev := p.seen
 	now := make(map[string]string, len(devs))
 	for _, d := range devs {
-		now[d.MAC] = d.ConnType
+		now[d.MAC] = d.ConnType + "|" + d.ConnOrbi
 	}
 	first := !p.seenOK
 	p.seen, p.seenOK = now, true
@@ -438,15 +448,48 @@ func (p *Poller) diffEvents(devs []Device) {
 		return // baseline: no event storm at startup
 	}
 	for _, d := range devs {
-		if isWiFi(d.ConnType) && prev[d.MAC] == "" {
+		if !isWiFi(d.ConnType) {
+			continue
+		}
+		prevKey := prev[d.MAC]
+		if prevKey == "" {
 			p.onEvent("orbi", "info", "Wi-Fi client joined: "+displayName(d)+" on "+band(d.ConnType))
+			continue
+		}
+		prevCT, prevAP, _ := strings.Cut(prevKey, "|")
+		if prevCT != d.ConnType {
+			p.onEvent("orbi", "info", displayName(d)+" moved from "+band(prevCT)+" to "+band(d.ConnType))
+		}
+		if prevAP != d.ConnOrbi {
+			p.onEvent("orbi", "info", displayName(d)+" roamed from "+p.apNameFor(devs, prevAP)+" to "+p.apNameFor(devs, d.ConnOrbi))
 		}
 	}
-	for mac, ct := range prev {
+	for mac, key := range prev {
+		ct, _, _ := strings.Cut(key, "|")
 		if isWiFi(ct) && now[mac] == "" {
 			p.onEvent("orbi", "info", "Wi-Fi client left: "+mac+" (was on "+band(ct)+")")
 		}
 	}
+}
+
+// apNameFor resolves one AP-unit MAC to a friendly name. Satellites list
+// themselves in the device table with ConnectionType "-"; the Orbi router
+// itself never does, so it falls back to the unit's model name.
+func (p *Poller) apNameFor(devs []Device, apMac string) string {
+	if apMac == "" {
+		return "unknown"
+	}
+	for _, d := range devs {
+		if d.MAC == apMac && d.ConnType == "-" {
+			return displayName(d)
+		}
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.state.Model != "" {
+		return p.state.Model
+	}
+	return "router"
 }
 
 func (p *Poller) commit(st State) {
