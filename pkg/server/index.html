@@ -1602,7 +1602,11 @@
       }
       const apRows = Object.keys(perAp).sort((a, b) => perAp[b].length - perAp[a].length).map(mac => {
         const unit = sats[mac], list = perAp[mac];
-        const label = unit ? nm(unit) : ((d.model || 'Orbi router') + ' · router');
+        const sat = (d.satellites || []).find(s => (s.mac || '').toUpperCase() === mac);
+        const label = sat ? sat.model : ((d.model || 'Orbi router') + ' · router');
+        const bh = !sat ? '' : sat.backhaul_conn
+          ? ' · backhaul ' + sat.backhaul_rssi + ' dBm'
+          : sat.ip ? ' · wired backhaul · ' + sat.ip : '';
         const n24 = list.filter(x => x.contype === '2.4G').length;
         const weakest = list.length ? Math.min(...list.map(x => x.signal)) : null;
         return '<div class="flex items-center gap-3 rounded-lg px-3 py-2" style="background:var(--panel2)">' +
@@ -1610,7 +1614,7 @@
           '<div class="min-w-0 flex-1">' +
             '<div class="text-[13.5px] font-semibold text-[var(--text)] truncate">' + label + '</div>' +
             '<div class="text-[12.5px] text-[var(--muted)]">' + list.length + ' client' + (list.length === 1 ? '' : 's') +
-              (list.length ? ' · ' + (list.length - n24) + '× 5 GHz' + (n24 ? ' · ' + n24 + '× 2.4 GHz' : '') : '') + '</div>' +
+              (list.length ? ' · ' + (list.length - n24) + '× 5 GHz' + (n24 ? ' · ' + n24 + '× 2.4 GHz' : '') : '') + bh + '</div>' +
           '</div>' +
           (weakest != null ? '<div class="num text-[13.5px] font-semibold" style="color:' + sigCol(weakest) + '" title="weakest client signal">' + weakest + '%</div>' : '') +
         '</div>';

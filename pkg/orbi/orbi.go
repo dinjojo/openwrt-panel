@@ -53,16 +53,31 @@ type RadioInfo struct {
 	SSID    string `json:"ssid"`
 }
 
+// SatelliteInfo is one mesh unit from the GetAllSatellites SOAP call
+// (confirmed working on RBR50 Voxel). BackhaulConn 0 with an IP usually
+// means Ethernet backhaul; wireless backhaul reports RSSI.
+type SatelliteInfo struct {
+	Name         string `json:"name"`
+	Model        string `json:"model"`
+	MAC          string `json:"mac"`
+	IP           string `json:"ip"`
+	Hop          int    `json:"hop"`
+	BackhaulConn int    `json:"backhaul_conn"` // 1 = wireless backhaul
+	BackhaulRSSI int    `json:"backhaul_rssi"`
+	Firmware     string `json:"firmware"`
+}
+
 // State is the latest Orbi snapshot.
 type State struct {
-	At        time.Time   `json:"at"`
-	Reachable bool        `json:"reachable"`
-	Busy      bool        `json:"busy"` // true when the device list could not be fetched
-	Model     string      `json:"model"`
-	Firmware  string      `json:"firmware"`
-	APMode    bool        `json:"ap_mode"`
-	Devices   []Device    `json:"devices"`
-	Radios    []RadioInfo `json:"radios"` // empty when the radio query failed
+	At         time.Time       `json:"at"`
+	Reachable  bool            `json:"reachable"`
+	Busy       bool            `json:"busy"` // true when the device list could not be fetched
+	Model      string          `json:"model"`
+	Firmware   string          `json:"firmware"`
+	APMode     bool            `json:"ap_mode"`
+	Devices    []Device        `json:"devices"`
+	Radios     []RadioInfo     `json:"radios"`     // empty when the radio query failed
+	Satellites []SatelliteInfo `json:"satellites"` // empty when the satellite query failed
 }
 
 // soapEnvelope is the GetAttachDevice2 response we parse.
@@ -97,6 +112,7 @@ const (
 	loginAction    = "urn:NETGEAR-ROUTER:service:DeviceConfig:1#SOAPLogin"
 	attachAction   = "urn:NETGEAR-ROUTER:service:DeviceInfo:1#GetAttachDevice2"
 	wlanService    = "urn:NETGEAR-ROUTER:service:WLANConfiguration:1"
+	deviceService  = "urn:NETGEAR-ROUTER:service:DeviceInfo:1"
 	sessionHeader  = "A7D88AE69687E58D9A00" // fixed magic session id, as the Netgear app sends
 )
 
@@ -223,6 +239,7 @@ func (p *Poller) refresh() {
 	}
 	st.Devices = devs
 	st.Radios = p.soapRadios()
+	st.Satellites = p.soapSatellites()
 	p.commit(st)
 	p.diffEvents(devs)
 	p.pushVM(devs, st.Radios)
@@ -364,12 +381,12 @@ func (p *Poller) soapDevices() ([]Device, error) {
 	return parseDevices(body)
 }
 
-// wlanEnvelope wraps one WLANConfiguration action call.
-func wlanEnvelope(action string) string {
+// soapCallXML wraps one action call under a service namespace.
+func soapCallXML(ns, action string) string {
 	return `<?xml version="1.0" encoding="utf-8" standalone="no"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 <SOAP-ENV:Header><SessionID>` + sessionHeader + `</SessionID></SOAP-ENV:Header>
-<SOAP-ENV:Body><M1:` + action + ` xmlns:M1="` + wlanService + `"></M1:` + action + `></SOAP-ENV:Body></SOAP-ENV:Envelope>`
+<SOAP-ENV:Body><M1:` + action + ` xmlns:M1="` + ns + `"></M1:` + action + `></SOAP-ENV:Body></SOAP-ENV:Envelope>`
 }
 
 // soapRadios reads both bands' radio state. Best-effort: on any failure
@@ -379,7 +396,7 @@ func (p *Poller) soapRadios() []RadioInfo {
 	for _, spec := range []struct{ action, band string }{
 		{"GetInfo", "2.4G"}, {"Get5GInfo", "5G"},
 	} {
-		raw, err := p.soapPost(wlanService+"#"+spec.action, wlanEnvelope(spec.action))
+		raw, err := p.soapPost(wlanService+"#"+spec.action, soapCallXML(wlanService, spec.action))
 		if err != nil {
 			log.Printf("[orbi] radio %s query failed: %v", spec.band, err)
 			continue
@@ -552,6 +569,57 @@ func (p *Poller) diffEvents(devs []Device) {
 			p.onEvent("orbi", "info", "Wi-Fi client left: "+mac+" (was on "+band(ct)+")")
 		}
 	}
+}
+
+// soapSatellites reads the mesh unit list (GetAllSatellites). Best-effort:
+// on failure the snapshot simply carries no satellite info.
+func (p *Poller) soapSatellites() []SatelliteInfo {
+	raw, err := p.soapPost(deviceService+"#GetAllSatellites", soapCallXML(deviceService, "GetAllSatellites"))
+	if err != nil || !strings.Contains(raw, "<ResponseCode>000") {
+		if err != nil {
+			log.Printf("[orbi] satellite query failed: %v", err)
+		}
+		return nil
+	}
+	// Seek each <satellite> element inside the envelope and decode it.
+	var out []SatelliteInfo
+	dec := xml.NewDecoder(strings.NewReader(raw))
+	for {
+		tok, terr := dec.Token()
+		if terr != nil {
+			break
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != "satellite" {
+			continue
+		}
+		var fields struct {
+			SignalStrength string `xml:"SignalStrength"`
+			Hop            string `xml:"Hop"`
+			BHConnStatus   string `xml:"BHConnStatus"`
+			IP             string `xml:"IP"`
+			DeviceName     string `xml:"DeviceName"`
+			MAC            string `xml:"MAC"`
+			ModelName      string `xml:"ModelName"`
+			FWVersion      string `xml:"FWVersion"`
+		}
+		if derr := dec.DecodeElement(&fields, &se); derr != nil {
+			continue
+		}
+		out = append(out, SatelliteInfo{
+			Name:         strings.TrimSpace(fields.DeviceName),
+			Model:        strings.TrimSpace(fields.ModelName),
+			MAC:          strings.ToUpper(strings.TrimSpace(fields.MAC)),
+			IP:           strings.TrimSpace(fields.IP),
+			Hop:          atoiDefault(fields.Hop, 0),
+			BackhaulConn: atoiDefault(fields.BHConnStatus, 0),
+			// SignalStrength is the backhaul RSSI; -100 is the placeholder
+			// the firmware reports when the backhaul is not wireless.
+			BackhaulRSSI: atoiDefault(fields.SignalStrength, 0),
+			Firmware:     strings.TrimSpace(fields.FWVersion),
+		})
+	}
+	return out
 }
 
 // apNameFor resolves one AP-unit MAC to a friendly name. Satellites list
