@@ -10,10 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/galpt/cake-stats/pkg/alerts"
 	"github.com/galpt/cake-stats/pkg/log"
 	"github.com/galpt/cake-stats/pkg/orbi"
 	"github.com/galpt/cake-stats/pkg/orbissn"
+	"github.com/galpt/cake-stats/pkg/radio"
 	"github.com/galpt/cake-stats/pkg/server"
+	"github.com/galpt/cake-stats/pkg/usage"
 	"github.com/rs/zerolog"
 )
 
@@ -34,6 +37,11 @@ func main() {
 	orbiSSHUser := flag.String("orbi-ssh-user", os.Getenv("ORBI_SSH_USER"), "Orbi SSH user for per-client Wi-Fi stats (default root when -orbi-ssh-pass is set)")
 	orbiSSHPass := flag.String("orbi-ssh-pass", os.Getenv("ORBI_SSH_PASS"), "Orbi SSH password (enables the SSH shell poller; host taken from -orbi-url)")
 	orbiTelnetPass := flag.String("orbi-telnet-pass", os.Getenv("ORBI_TELNET_PASS"), "Orbi telnet password (enables telnet shell polling, fallback after SSH; user = -orbi-ssh-user or root)")
+	radioIface := flag.String("radio-iface", os.Getenv("RADIO_IFACE"), "local monitor-mode Wi-Fi interface for channel utilisation and neighbour scans, e.g. wlan1 (empty disables)")
+	// The ntfy token is never logged; keep it in a root-only env file.
+	alertURL := flag.String("alert-ntfy-url", os.Getenv("ALERT_NTFY_URL"), "ntfy topic URL for push alerts on warn/crit events, e.g. https://ntfy.sh/mytopic (empty disables)")
+	alertToken := flag.String("alert-ntfy-token", os.Getenv("ALERT_NTFY_TOKEN"), "ntfy access token (sent as Authorization: Bearer)")
+	dataDir := flag.String("data-dir", envOr("CAKE_DATA_DIR", "/opt/monitoring"), "directory for persisted per-client usage files (usage-YYYY-MM-DD.jsonl)")
 	showVer := flag.Bool("version", false, "print version and exit")
 
 	flag.Usage = func() {
@@ -65,8 +73,25 @@ func main() {
 		SSHPass:    *orbiSSHPass,
 		TelnetPass: *orbiTelnetPass,
 	}))
+	srv.SetRadioCollector(radio.New(*radioIface))
+	notifier, err := alerts.New(*alertURL, *alertToken)
+	if err != nil {
+		log.Logger.Warn().Err(err).Msg("push alerts disabled")
+	}
+	srv.SetAlerts(notifier)
+	if *dataDir != "" {
+		srv.SetUsageStore(usage.New(*dataDir))
+	}
 	if err := srv.Run(ctx, addr); err != nil {
 		log.Logger.Fatal().Err(err).Msg("fatal")
 	}
 	log.Logger.Info().Msg("shutdown complete")
+}
+
+// envOr returns the environment variable or a default when it is unset.
+func envOr(key, def string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return def
 }

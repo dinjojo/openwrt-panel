@@ -22,6 +22,7 @@ import (
 
 	"github.com/galpt/cake-stats/pkg/sysmon"
 
+	"github.com/galpt/cake-stats/pkg/alerts"
 	"github.com/galpt/cake-stats/pkg/clients"
 	"github.com/galpt/cake-stats/pkg/events"
 	"github.com/galpt/cake-stats/pkg/health"
@@ -30,9 +31,12 @@ import (
 	"github.com/galpt/cake-stats/pkg/orbi"
 	"github.com/galpt/cake-stats/pkg/orbissn"
 	"github.com/galpt/cake-stats/pkg/parser"
+	"github.com/galpt/cake-stats/pkg/radio"
 	"github.com/galpt/cake-stats/pkg/types"
+	"github.com/galpt/cake-stats/pkg/usage"
 	"github.com/galpt/cake-stats/pkg/vm"
 	"github.com/galpt/cake-stats/pkg/wan"
+	"github.com/galpt/cake-stats/web"
 )
 
 //go:embed index.html
@@ -60,7 +64,10 @@ type Server struct {
 	wan          *wan.Poller
 	sys          *sysmon.Pollers
 	orbi         *orbi.Poller
-	shell        *orbissn.Poller // Orbi shell (SSH/telnet) poller; nil or disabled when unconfigured
+	shell        *orbissn.Poller  // Orbi shell (SSH/telnet) poller; nil or disabled when unconfigured
+	radio        *radio.Collector // local monitor-mode dongle; nil or disabled when unconfigured
+	alerts       *alerts.Notifier // ntfy push; nil when unconfigured
+	usage        *usage.Store     // per-client daily usage files; nil disables
 	events       *events.Store
 	version      string
 	configHashes map[string]string // last sha256 of each /etc/config file
@@ -86,6 +93,15 @@ func New(addr string, interval time.Duration, histCap int, vmURL, version string
 
 	app.Get("/", s.handleIndex)
 	app.Get("/favicon.ico", func(c fiber.Ctx) error { return c.Status(204).SendString("") })
+	app.Get("/manifest.webmanifest", func(c fiber.Ctx) error {
+		c.Set("Content-Type", "application/manifest+json")
+		return c.Send(web.Manifest)
+	})
+	app.Get("/icon-512.png", func(c fiber.Ctx) error {
+		c.Set("Content-Type", "image/png")
+		c.Set("Cache-Control", "public, max-age=86400")
+		return c.Send(web.Icon512)
+	})
 	app.Get("/api/stats", s.handleAPIStats)
 	app.Get("/api/history", s.handleAPIHistory)
 	app.Get("/api/history/vm", s.handleAPIHistoryVM)
@@ -100,6 +116,10 @@ func New(addr string, interval time.Duration, histCap int, vmURL, version string
 	app.Get("/api/incidents", s.handleAPIIncidents)
 	app.Get("/api/tunnel", s.handleAPITunnel)
 	app.Get("/api/orbi", s.handleAPIOrbi)
+	app.Get("/api/radio", s.handleAPIRadio)
+	app.Get("/api/config", s.handleAPIConfig)
+	app.Get("/api/report", s.handleAPIReport)
+	app.Get("/api/usage", s.handleAPIUsage)
 	app.Get("/events", s.handleSSE)
 
 	s.app = app
@@ -111,6 +131,9 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	s.wan = wan.New(ctx)
 	s.sys = sysmon.NewAll(ctx)
 	s.events = events.New("/opt/monitoring/cake-stats-events.json")
+	if s.alerts.Enabled() {
+		s.events.SetHook(func(kind, sev, msg string) { s.alerts.Notify(kind, sev, msg) })
+	}
 	s.events.Add("monitor", "info", "Monitor restarted ("+s.version+") — watching WAN, WARP and Cake")
 	if s.orbi.Enabled() {
 		s.orbi.SetEventHook(s.events.Add)
@@ -120,6 +143,8 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		s.shell.SetEventHook(s.events.Add)
 		go s.shell.Run(ctx)
 	}
+	go s.radio.Run(ctx) // returns at once when no dongle is configured
+	go s.recordUsage(ctx)
 	go s.watchEvents(ctx)
 	go s.runPoller(ctx)
 	go s.clientStore.Run(ctx, s.vmc) // per-client accounting poller
@@ -866,11 +891,13 @@ func (s *Server) orbiRun(ctx context.Context) {
 func (s *Server) SetShellPoller(p *orbissn.Poller) { s.shell = p }
 
 // orbiPayload is the /api/orbi body: the SOAP snapshot plus the shell
-// poller's per-station stats and status (both always present).
+// poller's per-station stats, radio environment and status (all always
+// present; radioenv is [] when the shell is down).
 type orbiPayload struct {
 	orbi.State
 	Stations map[string]orbissn.Station `json:"stations"`
 	Shell    orbissn.Status             `json:"shell"`
+	RadioEnv []orbissn.RadioEnv         `json:"radioenv"`
 }
 
 // handleAPIOrbi reports the Orbi AP snapshot: reachability, firmware,
@@ -878,7 +905,7 @@ type orbiPayload struct {
 // online state), and shell-sourced per-station radio stats.
 func (s *Server) handleAPIOrbi(c fiber.Ctx) error {
 	sh := s.shell.Snapshot()
-	st := orbiPayload{State: s.orbi.Snapshot(), Stations: sh.Stations, Shell: sh.Shell}
+	st := orbiPayload{State: s.orbi.Snapshot(), Stations: sh.Stations, Shell: sh.Shell, RadioEnv: sh.RadioEnv}
 	c.Set("Content-Type", "application/json; charset=utf-8")
 	b, _ := json.Marshal(st)
 	return c.Send(b)

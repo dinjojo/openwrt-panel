@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>cake-stats</title>
+  <!-- PWA: installable on phones (manifest + icon served by the Go handler) -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#131519" />
+  <link rel="apple-touch-icon" href="/icon-512.png" />
+  <link rel="icon" type="image/png" href="/icon-512.png" />
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&family=Fira+Code:wght@400;500;600;700&display=swap"
@@ -233,6 +238,17 @@
             </div>
           </div>
         </div>
+        <!-- Radio environment: hidden until there is data. Full card from
+             the USB sensor radio (/api/radio ok:true); slim noise-floor-only
+             card from the Orbi's own radios (/api/orbi radioenv) otherwise. -->
+        <div id="ov-radio" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 lg:col-span-2 hidden">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Radio environment</div>
+            <div id="ov-radio-meta" class="text-[12.5px] text-[var(--muted)]"></div>
+          </div>
+          <div id="ov-radio-bands" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-3"></div>
+          <div id="ov-radio-nb" class="hidden mt-4 pt-3 border-t border-[var(--line)]/60"></div>
+        </div>
         <!-- Top clients · clickable rows open the client drill-down -->
         <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
           <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Top clients &middot; this billing period</div>
@@ -364,7 +380,7 @@
 </section>
 
     <!-- ═══ Tab: System (router health history) ═══════════════════════════ -->
-    <section id="tab-system" role="tabpanel" class="hidden">
+    <section id="tab-system" role="tabpanel" class="hidden space-y-4">
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4">
         <div class="flex items-center justify-between gap-3 mb-3">
           <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
@@ -378,6 +394,23 @@
         </div>
         <div id="wan-strip" class="grid gap-3 grid-cols-2 lg:grid-cols-4 mb-4 hidden"></div>
         <div id="sys-charts" class="space-y-4"></div>
+      </div>
+      <!-- Daily report: hidden until /api/report answers with data -->
+      <div id="sys-report" class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl p-4 hidden">
+        <div class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)] mb-3">Reports &mdash; last 7 days</div>
+        <div class="overflow-x-auto scroll-thin"><table class="w-full text-[13.5px]">
+          <thead><tr class="text-left text-[11.5px] font-semibold text-[var(--muted)] border-b border-[var(--line)]">
+            <th class="px-2 py-1.5 font-semibold">Date</th>
+            <th class="px-2 py-1.5 font-semibold text-right">WAN up</th>
+            <th class="px-2 py-1.5 font-semibold text-right">Latency avg (p95)</th>
+            <th class="px-2 py-1.5 font-semibold text-right">Buffering events</th>
+            <th class="px-2 py-1.5 font-semibold text-right">Satellite offline</th>
+            <th class="px-2 py-1.5 font-semibold text-right">Downloaded</th>
+            <th class="px-2 py-1.5 font-semibold text-right">Uploaded</th>
+          </tr></thead>
+          <tbody id="sys-report-rows"></tbody>
+        </table></div>
+        <div id="sys-report-foot" class="text-[12.5px] text-[var(--faint)] mt-2"></div>
       </div>
     </section>
 
@@ -548,7 +581,11 @@
           <span id="clm-tx" class="num font-bold text-[var(--accent)] ml-1.5">&ndash;</span></div>
       </div>
       <!-- Chart area -->
-      <div id="clm-charts" class="overflow-y-auto scroll-thin p-5 space-y-6 flex-1"></div>
+      <div class="overflow-y-auto scroll-thin flex-1">
+        <div id="clm-charts" class="p-5 space-y-6"></div>
+        <!-- Per-day usage from /api/usage; hidden when the endpoint is absent -->
+        <div id="clm-usage" class="hidden px-5 pb-5"></div>
+      </div>
     </div>
   </div>
 
@@ -1483,7 +1520,9 @@
       if (name === 'overview') {
         pollOverview();
         loadOvIncidents();
-        if (!tabTimers.overview) tabTimers.overview = [setInterval(pollOverview, 10000), setInterval(loadOvIncidents, 60000)];
+        loadRadio();
+        if (!tabTimers.overview) tabTimers.overview = [setInterval(pollOverview, 10000), setInterval(loadOvIncidents, 60000),
+          setInterval(loadRadio, 30000)];
       } else if (name === 'clients') {
         pollClients();
         renderClientsTable();
@@ -1505,7 +1544,8 @@
         ];
       } else if (name === 'system') {
         loadSystemHistory();
-        tabTimers.system = [setInterval(loadSystemHistory, 60000)];
+        loadReport();
+        tabTimers.system = [setInterval(loadSystemHistory, 60000), setInterval(loadReport, 600000)];
       }
     }
 
@@ -1517,10 +1557,10 @@
     // Manual refresh: re-run the current tab's loaders immediately. SQM has
     // no loaders of its own — its data streams in over SSE every few seconds.
     function refreshTab() {
-      if (activeTab === 'overview') { pollOverview(); loadOvIncidents(); }
+      if (activeTab === 'overview') { pollOverview(); loadOvIncidents(); loadRadio(); }
       else if (activeTab === 'clients') { pollClients(); renderClientsTable(); loadClientHistory(); }
       else if (activeTab === 'diag') { loadConnHealth(); loadIncidents(); loadDiagWanChart(); loadLatencyQuality(); }
-      else if (activeTab === 'system') { loadSystemHistory(); }
+      else if (activeTab === 'system') { loadSystemHistory(); loadReport(); }
       const lu = document.getElementById('last-updated');
       if (lu) { lu.style.color = 'var(--accent)'; setTimeout(() => { lu.style.color = ''; }, 600); }
     }
@@ -1624,6 +1664,8 @@
         if (document.querySelector('.tab-btn[data-tab="clients"].tab-active')) renderClientsTable();
         renderOverviewWifi(d);
         loadWifiSpark();
+        trackRadioEnv(d);
+        renderRadio();
       } catch (_) {}
     }
 
@@ -1743,6 +1785,193 @@
       if (ct === '2.4G') return '2.4 GHz';
       if (ct === '5G') return '5 GHz';
       return ct || '';
+    }
+
+    // ── Overview: Radio environment card ──────────────────────────────────
+    // Two sources, hidden entirely when neither has data:
+    //  • /api/radio  — USB sensor radio (airtime busy %, noise, neighbours).
+    //                  ok:false (no dongle) or 404 → full card hidden.
+    //  • /api/orbi radioenv — the Orbi's own radios: noise floor plus a
+    //                  cumulative "wrong network id" reject counter. Shown
+    //                  as a slim card when the sensor card is hidden, folded
+    //                  in as secondary text when it is shown.
+    let radioData = null;          // last /api/radio payload (null = unavailable)
+    let orbiRadioEnv = [];         // last /api/orbi radioenv[]
+    const radioEnvHist = {};       // iface -> { last, lastAt, deltas: [{ t0, t, v }] }
+    const RADIOENV_KEEP = 48;      // nwid-reject deltas kept for the mini trend
+
+    async function loadRadio() {
+      try {
+        const r = await fetch(appURL('/api/radio'));
+        radioData = r.ok ? await r.json() : null;
+      } catch (_) { radioData = null; }
+      renderRadio();
+    }
+
+    /** Record the nwid_rejects delta per Orbi radio between consecutive
+     *  /api/orbi snapshots (the counter is cumulative since AP boot). */
+    function trackRadioEnv(d) {
+      orbiRadioEnv = Array.isArray(d.radioenv) ? d.radioenv.filter(r => r && r.noise_dbm != null) : [];
+      const snapAt = d.at ? String(d.at) : String(Date.now());
+      const now = Date.now();
+      orbiRadioEnv.forEach(r => {
+        const k = r.iface || r.band;
+        if (!k || r.nwid_rejects == null) return;
+        const st = radioEnvHist[k] || (radioEnvHist[k] = { last: null, lastAt: null, lastT: 0, deltas: [] });
+        if (st.lastAt === snapAt) return; // same backend snapshot — no new data
+        const v = Number(r.nwid_rejects);
+        if (st.last != null && v >= st.last) {
+          st.deltas.push({ t0: st.lastT, t: now, v: v - st.last });
+          if (st.deltas.length > RADIOENV_KEEP) st.deltas.shift();
+        } else if (st.last != null && v < st.last) {
+          st.deltas = []; // counter reset (AP rebooted) — restart the trend
+        }
+        st.last = v; st.lastAt = snapAt; st.lastT = now;
+      });
+    }
+
+    const MINUS = '\u2212';
+    const fmtDbm = n => (n < 0 ? MINUS + Math.abs(Math.round(n)) : String(Math.round(n))) + ' dBm';
+    const fmtK = n => n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e4 ? (n / 1e3).toFixed(0) + 'k' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n));
+    const fmtSpan = ms => { const m = Math.round(ms / 60000); return m < 90 ? Math.max(1, m) + ' min' : (m / 60).toFixed(1) + ' h'; };
+    /** Plain-language noise floor: lower (more negative) is quieter. */
+    function noiseVerdict(n) {
+      if (n <= -90) return { word: 'quiet air', col: 'var(--green)' };
+      if (n <= -80) return { word: 'some background noise', col: 'var(--amber)' };
+      return { word: 'noisy air — expect retries', col: 'var(--red)' };
+    }
+    const utilCol = u => u > 70 ? 'var(--red)' : u >= 40 ? 'var(--amber)' : 'var(--green)';
+    function utilVerdict(band, u) {
+      const name = obBand(band) || band;
+      if (u > 70) return name + ' is busy — expect slower Wi-Fi at peak';
+      if (u >= 40) return name + ' is getting crowded — fine for browsing, big transfers may slow';
+      return 'the air is quiet — plenty of headroom';
+    }
+    const bandOrder = b => b === '5G' ? 0 : b === '2.4G' ? 1 : 2;
+
+    function renderRadio() {
+      const card = document.getElementById('ov-radio');
+      if (!card) return;
+      const meta = document.getElementById('ov-radio-meta');
+      const grid = document.getElementById('ov-radio-bands');
+      const nbEl = document.getElementById('ov-radio-nb');
+      const full = radioData && radioData.ok === true &&
+        ((radioData.bands || []).length || (radioData.neighbours || []).length);
+      if (full) {
+        renderRadioFull(meta, grid, nbEl);
+        card.classList.remove('hidden');
+      } else if (orbiRadioEnv.length) {
+        renderRadioSlim(meta, grid, nbEl);
+        card.classList.remove('hidden');
+      } else {
+        card.classList.add('hidden');
+      }
+    }
+
+    function renderRadioSlim(meta, grid, nbEl) {
+      meta.textContent = 'noise floor from the Orbi\u2019s own radios';
+      nbEl.classList.add('hidden');
+      nbEl.innerHTML = '';
+      grid.className = 'grid gap-3 sm:grid-cols-2 mt-3';
+      const rows = orbiRadioEnv.slice().sort((a, b) => bandOrder(a.band) - bandOrder(b.band));
+      grid.innerHTML = rows.map(r => {
+        const nv = noiseVerdict(r.noise_dbm);
+        const st = radioEnvHist[r.iface || r.band];
+        let rej = '', spark = '';
+        if (st && st.deltas.length >= 2) {
+          const sum = st.deltas.reduce((a, x) => a + x.v, 0);
+          rej = 'other networks seen: <span class="num font-semibold text-[var(--text)]">' + fmtK(sum) + '</span> frames rejected in the last ' +
+            fmtSpan(st.deltas[st.deltas.length - 1].t - st.deltas[0].t0);
+          spark = '<svg class="ov-radio-spark shrink-0 w-24 overflow-visible" data-k="' + h(r.iface || r.band) + '" height="20" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>';
+        } else if (st && st.deltas.length === 1) {
+          const dl = st.deltas[0];
+          rej = 'other networks seen: <span class="num font-semibold text-[var(--text)]">' + fmtK(dl.v) + '</span> frames rejected in the last ' + fmtSpan(dl.t - dl.t0);
+        } else if (r.nwid_rejects != null) {
+          rej = 'other networks seen: <span class="num font-semibold text-[var(--text)]">' + fmtK(Number(r.nwid_rejects)) + '</span> frames rejected since the Orbi started';
+        }
+        const q = r.quality_max ? ' title="link quality ' + h(r.quality) + '/' + h(r.quality_max) + '"' : '';
+        return '<div class="rounded-lg px-3 py-2.5" style="background:var(--panel2)"' + q + '>' +
+          '<div class="text-[11.5px] font-bold uppercase tracking-widest" style="color:var(--accent)">' + h(obBand(r.band) || r.band || '') +
+            (r.freq_ghz ? ' <span class="text-[var(--faint)] font-normal normal-case tracking-normal">· ' + h(r.freq_ghz) + ' GHz</span>' : '') + '</div>' +
+          '<div class="text-[13.5px] mt-1">noise <span class="num font-semibold text-[var(--text)]">' + fmtDbm(r.noise_dbm) + '</span> — ' +
+            '<span style="color:' + nv.col + '">' + nv.word + '</span></div>' +
+          (rej ? '<div class="flex items-end justify-between gap-3 mt-1"><div class="text-[12.5px] text-[var(--muted)]">' + rej + '</div>' + spark + '</div>' : '') +
+        '</div>';
+      }).join('');
+      grid.querySelectorAll('.ov-radio-spark').forEach(svg => {
+        const st = radioEnvHist[svg.dataset.k];
+        if (st) drawSparkline(svg, st.deltas.map(x => x.v), 'var(--faint)');
+      });
+    }
+
+    function renderRadioFull(meta, grid, nbEl) {
+      const d = radioData;
+      const bands = (d.bands || []).slice().sort((a, b) => bandOrder(a.band) - bandOrder(b.band));
+      const nbs = (d.neighbours || []).slice().sort((a, b) => (b.signal_dbm ?? -999) - (a.signal_dbm ?? -999));
+      const age = d.at ? Math.max(0, Math.round(Date.now() / 1000 - d.at)) : null;
+      meta.textContent = [d.iface ? 'sensor: ' + d.iface : '', age != null ? 'updated ' + (age < 90 ? age + 's' : Math.round(age / 60) + ' min') + ' ago' : '']
+        .filter(Boolean).join(' · ');
+      const sameCh = b => nbs.filter(n => n.band === b.band && b.channel && n.channel === b.channel).length;
+
+      const chips = bands.map(b => {
+        const u = b.utilization != null ? Number(b.utilization) : null;
+        const orbi = orbiRadioEnv.find(r => r.band === b.band);
+        const nv = b.noise_dbm != null ? noiseVerdict(b.noise_dbm) : null;
+        return '<div class="rounded-xl px-4 py-3" style="background:var(--panel2)"' + (b.freq_mhz ? ' title="' + h(b.freq_mhz) + ' MHz"' : '') + '>' +
+          '<div class="text-[11.5px] font-bold uppercase tracking-widest" style="color:var(--accent)">' + h(obBand(b.band) || b.band) +
+            (b.channel ? ' &middot; channel ' + h(b.channel) : '') + '</div>' +
+          (u != null
+            ? '<div class="num display text-3xl font-bold mt-1 leading-none" style="color:' + utilCol(u) + '">' + Math.round(u) +
+                '<span class="text-[15px] font-normal text-[var(--muted)]">% airtime busy</span></div>' +
+              '<div class="h-2 rounded bg-[var(--panel)] overflow-hidden mt-2"><div class="h-full rounded" style="width:' +
+                Math.min(100, Math.max(0, u)).toFixed(0) + '%;background:' + utilCol(u) + '"></div></div>'
+            : '<div class="text-[13.5px] text-[var(--muted)] mt-1">airtime not measured yet</div>') +
+          (nv ? '<div class="text-[12.5px] text-[var(--muted)] mt-2">noise floor <span class="num font-semibold text-[var(--text)]">' + fmtDbm(b.noise_dbm) +
+                '</span> &middot; <span style="color:' + nv.col + '">' + nv.word + '</span></div>' : '') +
+          (u != null ? '<div class="text-[12.5px] mt-0.5" style="color:' + utilCol(u) + '">' + h(utilVerdict(b.band, u)) + '</div>' : '') +
+          (orbi ? '<div class="text-[11.5px] text-[var(--faint)] mt-1">Orbi radio hears noise ' + fmtDbm(orbi.noise_dbm) + '</div>' : '') +
+        '</div>';
+      });
+      // Verdict tile: overall reading in one sentence per band.
+      const lines = bands.filter(b => b.utilization != null).map(b => {
+        const u = Number(b.utilization), n = sameCh(b);
+        const word = u > 70 ? 'busy' : u >= 40 ? 'crowded' : 'healthy';
+        return h(obBand(b.band) || b.band) + ' is <span class="font-semibold" style="color:' + utilCol(u) + '">' + word + '</span>' +
+          (n ? ' — ' + n + ' neighbouring network' + (n === 1 ? '' : 's') + ' on channel ' + h(b.channel) : '') + '.';
+      });
+      if (lines.length) chips.push(
+        '<div class="rounded-xl px-4 py-3" style="background:var(--panel2)">' +
+          '<div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Wi-Fi verdict</div>' +
+          '<div class="text-[13.5px] mt-1 leading-relaxed">' + lines.join('<br>') + '</div>' +
+        '</div>');
+      grid.className = 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-3';
+      grid.innerHTML = chips.join('');
+      grid.classList.toggle('hidden', !chips.length);
+
+      if (!nbs.length) { nbEl.classList.add('hidden'); nbEl.innerHTML = ''; return; }
+      const ourCh = {};
+      bands.forEach(b => { if (b.channel) ourCh[b.band] = b.channel; });
+      const MAXNB = 15;
+      const sigCol = s => s == null ? 'var(--faint)' : s >= -60 ? 'var(--text)' : s >= -80 ? 'var(--muted)' : 'var(--faint)';
+      nbEl.innerHTML =
+        '<div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Neighbouring networks &middot; ' + nbs.length + ' seen</div>' +
+        '<div class="overflow-x-auto scroll-thin"><table class="w-full text-[13px] mt-2"><thead><tr class="text-left text-[11.5px] text-[var(--muted)] border-b border-[var(--line)]">' +
+          '<th class="px-2 py-1.5 font-semibold">network</th><th class="px-2 py-1.5 font-semibold">band</th>' +
+          '<th class="px-2 py-1.5 font-semibold text-right">channel</th><th class="px-2 py-1.5 font-semibold text-right">signal</th>' +
+          '<th class="px-2 py-1.5 font-semibold"></th></tr></thead><tbody>' +
+        nbs.slice(0, MAXNB).map(n => {
+          const shares = ourCh[n.band] && n.channel === ourCh[n.band];
+          return '<tr class="border-b border-[var(--line)]/40">' +
+            '<td class="px-2 py-1.5 truncate max-w-[16rem]"' + (n.bssid ? ' title="' + h(n.bssid) + '"' : '') + '>' +
+              (n.ssid ? h(n.ssid) : '<span class="text-[var(--faint)]">(hidden network)</span>') + '</td>' +
+            '<td class="px-2 py-1.5 text-[var(--muted)]">' + h(obBand(n.band) || n.band || '') + '</td>' +
+            '<td class="px-2 py-1.5 num text-right">' + (n.channel != null ? h(n.channel) : '–') + '</td>' +
+            '<td class="px-2 py-1.5 num text-right font-semibold" style="color:' + sigCol(n.signal_dbm) + '">' + (n.signal_dbm != null ? fmtDbm(n.signal_dbm) : '–') + '</td>' +
+            '<td class="px-2 py-1.5 text-[12.5px]">' + (shares ? '<span style="color:var(--amber)">shares your channel</span>' : '') + '</td>' +
+          '</tr>';
+        }).join('') + '</tbody></table></div>' +
+        (nbs.length > MAXNB ? '<div class="text-[12.5px] text-[var(--faint)] mt-1">+' + (nbs.length - MAXNB) + ' weaker networks not shown</div>' : '');
+      nbEl.classList.remove('hidden');
     }
 
     /** Show the Wi-Fi table only when the Orbi integration is configured,
@@ -2021,7 +2250,76 @@
       if (sysData.wanerrs) one('WAN link errors (per min)', sysData.wanerrs, cv('--red'), v => v.toFixed(2));
     }
 
+    // ── System tab: daily report (/api/report) ────────────────────────────
+    // Hidden silently when the endpoint is missing, errors, or has no days.
 
+    /** Local YYYY-MM-DD (the report's day keys are router-local dates). */
+    function localDayKey(dt) {
+      const p = n => String(n).padStart(2, '0');
+      return dt.getFullYear() + '-' + p(dt.getMonth() + 1) + '-' + p(dt.getDate());
+    }
+    /** GB value → "1.2 GB", or "42 MB" below 100 MB. */
+    function fmtGB(gb) {
+      if (gb == null || isNaN(gb)) return '–';
+      gb = Number(gb);
+      if (gb <= 0) return '0';
+      if (gb < 0.1) { const mb = gb * 1000; return mb < 1 ? '<1 MB' : Math.round(mb) + ' MB'; }
+      return gb.toFixed(1) + ' GB';
+    }
+    function dayLabel(key) {
+      if (key === localDayKey(new Date())) return 'today (so far)';
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key || '');
+      if (!m) return key || '–';
+      const dt = new Date(+m[1], +m[2] - 1, +m[3]);
+      return dt.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+    }
+
+    async function loadReport() {
+      const box = document.getElementById('sys-report');
+      if (!box) return;
+      let d = null;
+      try {
+        const r = await fetch(appURL('/api/report?days=7'));
+        if (r.ok) d = await r.json();
+      } catch (_) { d = null; }
+      const days = d && Array.isArray(d.days) ? d.days.slice() : [];
+      if (!days.length) { box.classList.add('hidden'); return; }
+      days.sort((a, b) => String(b.date).localeCompare(String(a.date))); // newest first
+      const num = v => v != null && !isNaN(v);
+      const upCol = p => p >= 99.5 ? 'var(--green)' : p >= 98 ? 'var(--amber)' : 'var(--red)';
+      const latCol = ms => ms < 30 ? 'var(--green)' : ms < 80 ? 'var(--amber)' : 'var(--red)';
+      const dash = '<span class="text-[var(--faint)]">–</span>';
+      const fmtMin = m => m < 60 ? Math.round(m) + ' min' : Math.floor(m / 60) + 'h ' + Math.round(m % 60) + 'm';
+      document.getElementById('sys-report-rows').innerHTML = days.map(x => {
+        const today = x.date === localDayKey(new Date());
+        const up = num(x.wan_up_pct)
+          ? '<span class="font-semibold" style="color:' + upCol(x.wan_up_pct) + '">' + Number(x.wan_up_pct).toFixed(x.wan_up_pct >= 99.95 ? 0 : 1) + '%</span>' : dash;
+        const lat = num(x.latency_avg_ms)
+          ? '<span class="font-semibold" style="color:' + latCol(num(x.latency_p95_ms) ? x.latency_p95_ms : x.latency_avg_ms) + '">' +
+              Number(x.latency_avg_ms).toFixed(1) + ' ms</span>' +
+            (num(x.latency_p95_ms) ? ' <span class="text-[var(--muted)]">(' + Number(x.latency_p95_ms).toFixed(1) + ')</span>' : '') : dash;
+        const buf = !num(x.buffering_events) ? dash : x.buffering_events > 0
+          ? '<span style="color:' + (x.buffering_events > 5 ? 'var(--red)' : 'var(--amber)') + '">' + fmtNum(x.buffering_events) + '</span>'
+          : '<span class="text-[var(--faint)]">none</span>';
+        const sat = !num(x.satellite_offline_min) ? dash : x.satellite_offline_min > 0
+          ? '<span style="color:' + (x.satellite_offline_min > 60 ? 'var(--red)' : 'var(--amber)') + '">' + fmtMin(x.satellite_offline_min) + '</span>'
+          : '<span class="text-[var(--faint)]">none</span>';
+        return '<tr class="border-b border-[var(--line)]/40">' +
+          '<td class="px-2 py-1.5 whitespace-nowrap' + (today ? ' text-[var(--accent)] font-semibold' : '') + '">' + h(dayLabel(x.date)) + '</td>' +
+          '<td class="px-2 py-1.5 num text-right">' + up + '</td>' +
+          '<td class="px-2 py-1.5 num text-right whitespace-nowrap">' + lat + '</td>' +
+          '<td class="px-2 py-1.5 num text-right">' + buf + '</td>' +
+          '<td class="px-2 py-1.5 num text-right">' + sat + '</td>' +
+          '<td class="px-2 py-1.5 num text-right">' + (num(x.wan_rx_gb) ? fmtGB(x.wan_rx_gb) : dash) + '</td>' +
+          '<td class="px-2 py-1.5 num text-right">' + (num(x.wan_tx_gb) ? fmtGB(x.wan_tx_gb) : dash) + '</td>' +
+        '</tr>';
+      }).join('');
+      const foot = document.getElementById('sys-report-foot');
+      const al = d.alerts;
+      foot.textContent = al && typeof al.enabled === 'boolean' ? (al.enabled ? 'push alerts: ntfy — on' : 'push alerts: off') : '';
+      foot.classList.toggle('hidden', !foot.textContent);
+      box.classList.remove('hidden');
+    }
 
     // ── Client drill-down modal ───────────────────────────────────────────
 
@@ -2043,7 +2341,10 @@
       document.getElementById('clm-rx').textContent = '–';
       document.getElementById('clm-tx').textContent = '–';
       document.getElementById('client-modal').style.display = 'flex';
+      const us = document.getElementById('clm-usage');
+      if (us) { us.classList.add('hidden'); us.innerHTML = ''; }
       requestAnimationFrame(loadClientModalHistory);
+      loadClientUsage();
       if (clModal.timer) clearInterval(clModal.timer);
       clModal.timer = setInterval(loadClientModalHistory, 60000);
     }
@@ -2056,6 +2357,57 @@
       document.getElementById('client-modal').style.display = 'none';
       const cd = document.getElementById('clm-charts');
       if (cd) cd.innerHTML = '';
+      const us = document.getElementById('clm-usage');
+      if (us) { us.classList.add('hidden'); us.innerHTML = ''; }
+    }
+
+    // Per-day usage (/api/usage?days=7) shared by every client modal; cached
+    // briefly so flicking between clients doesn't refetch. null = endpoint
+    // unavailable (404/error) → the section stays hidden.
+    let usageCache = null, usageAt = 0;
+    async function loadClientUsage() {
+      const mac = clModal.mac;
+      const el = document.getElementById('clm-usage');
+      if (!mac || !el) return;
+      if (!usageCache || Date.now() - usageAt > 300000) {
+        let d = null;
+        try {
+          const r = await fetch(appURL('/api/usage?days=7'));
+          if (r.ok) d = await r.json();
+        } catch (_) { d = null; }
+        usageCache = d && Array.isArray(d.days) ? d : null;
+        usageAt = Date.now();
+      }
+      if (clModal.mac !== mac) return; // modal closed or switched meanwhile
+      if (!usageCache) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+      const key = String(mac).toUpperCase();
+      const days = usageCache.days.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      const rows = days.map(x => ({ date: x.date, u: x.clients && x.clients[key] }));
+      const seen = rows.filter(r => r.u);
+      const head = '<div class="flex items-baseline justify-between gap-3 border-t border-[var(--line)] pt-4">' +
+        '<span class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">Usage &mdash; last 7 days</span>';
+      if (!seen.length) {
+        el.innerHTML = head + '</div><p class="text-[13.5px] text-[var(--muted)] mt-2">no usage recorded yet for this device</p>';
+        el.classList.remove('hidden');
+        return;
+      }
+      const tot = seen.reduce((a, r) => ({ rx: a.rx + (r.u.rx_gb || 0), tx: a.tx + (r.u.tx_gb || 0) }), { rx: 0, tx: 0 });
+      const max = Math.max(...seen.map(r => Math.max(r.u.rx_gb || 0, r.u.tx_gb || 0)), 1e-9);
+      const bar = (v, col) => '<div class="h-1.5 rounded-full bg-[var(--panel2)] overflow-hidden"><div class="h-full rounded-full" style="width:' +
+        (v > 0 ? Math.max(2, v / max * 100).toFixed(1) : 0) + '%;background:' + col + '"></div></div>';
+      el.innerHTML = head +
+          '<span class="text-[12.5px] text-[var(--muted)]">&#9660; <span class="num font-semibold text-[var(--green)]">' + fmtGB(tot.rx) +
+          '</span> &middot; &#9650; <span class="num font-semibold text-[var(--accent)]">' + fmtGB(tot.tx) + '</span></span></div>' +
+        '<div class="mt-2 space-y-1.5">' + rows.map(r => {
+          const rx = r.u ? r.u.rx_gb || 0 : 0, tx = r.u ? r.u.tx_gb || 0 : 0;
+          return '<div class="grid items-center gap-x-3 text-[12.5px]" style="grid-template-columns:7.5rem 1fr 4.5rem">' +
+            '<span class="row-span-2 ' + (r.date === localDayKey(new Date()) ? 'text-[var(--accent)] font-semibold' : 'text-[var(--muted)]') + '">' + h(dayLabel(r.date)) + '</span>' +
+            bar(rx, 'var(--green)') + '<span class="num text-right">' + (r.u ? fmtGB(rx) : '–') + '</span>' +
+            bar(tx, 'var(--accent)') + '<span class="num text-right text-[var(--muted)]">' + (r.u ? fmtGB(tx) : '–') + '</span>' +
+          '</div>';
+        }).join('') + '</div>' +
+        '<div class="text-[11.5px] text-[var(--faint)] mt-2">green = downloaded &middot; teal = uploaded</div>';
+      el.classList.remove('hidden');
     }
 
     async function loadClientModalHistory() {
@@ -2649,8 +3001,15 @@
         const when = today
           ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : (d.getDate() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        return '<div class="flex items-start gap-2.5">' +
-          '<span class="mt-0.5 text-[8px]" style="color:' + sevCol(ev.sev) + '">&#9679;</span>' +
+        // Kinds share the severity dot; "satellite" (mesh unit offline /
+        // back online) gets the small router glyph — muted when it's a
+        // recovery, severity-tinted when a unit dropped off.
+        const mark = ev.kind === 'satellite'
+          ? '<span class="w-3 shrink-0 flex justify-center mt-[3px]" style="color:' +
+              (ev.sev === 'warn' || ev.sev === 'crit' ? sevCol(ev.sev) : 'var(--muted)') + '">' +
+              ICON_ROUTER.replace('width="15" height="15"', 'width="12" height="12"') + '</span>'
+          : '<span class="w-3 shrink-0 text-center mt-0.5 text-[8px]" style="color:' + sevCol(ev.sev) + '">&#9679;</span>';
+        return '<div class="flex items-start gap-2.5">' + mark +
           '<span class="num text-[12.5px] text-[var(--muted)] w-24 shrink-0">' + when + '</span>' +
           '<span class="flex-1 leading-snug">' + h(ev.msg) +
             (ev.count > 1 ? ' <span class="num text-[11.5px] text-[var(--muted)] whitespace-nowrap">&times;' + ev.count + '</span>' : '') +

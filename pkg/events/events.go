@@ -14,9 +14,9 @@ import (
 
 // Event is one notable occurrence.
 type Event struct {
-	At    int64  `json:"at"`           // unix seconds
-	Kind  string `json:"kind"`         // wan | warp | reboot | probe | bloat | conntrack | config | monitor
-	Sev   string `json:"sev"`          // ok | warn | crit | info
+	At    int64  `json:"at"`   // unix seconds
+	Kind  string `json:"kind"` // wan | warp | reboot | probe | bloat | conntrack | config | monitor | wifi | orbi | satellite
+	Sev   string `json:"sev"`  // ok | warn | crit | info
 	Msg   string `json:"msg"`
 	Count int    `json:"count,omitempty"` // collapsed repeats: 27 restarts, N flaps
 }
@@ -31,6 +31,15 @@ type Store struct {
 	mu     sync.Mutex
 	events []Event
 	path   string
+	hook   func(kind, sev, msg string)
+}
+
+// SetHook registers a callback run (outside the store lock) for every
+// event added, e.g. to push alerts. Call before events start flowing.
+func (s *Store) SetHook(fn func(kind, sev, msg string)) {
+	s.mu.Lock()
+	s.hook = fn
+	s.mu.Unlock()
 }
 
 // New loads any persisted events and returns the store. The loaded ring is
@@ -53,7 +62,15 @@ func New(path string) *Store {
 // becomes a counted flap instead of a wall of entries.
 func (s *Store) Add(kind, sev, msg string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.addLocked(kind, sev, msg)
+	hook := s.hook
+	s.mu.Unlock()
+	if hook != nil {
+		hook(kind, sev, msg)
+	}
+}
+
+func (s *Store) addLocked(kind, sev, msg string) {
 	ev := Event{At: time.Now().Unix(), Kind: kind, Sev: sev, Msg: msg, Count: 1}
 	if len(s.events) > 0 {
 		last := s.events[0]

@@ -1,0 +1,14 @@
+{
+  "name": "cake-stats — router monitor",
+  "short_name": "cake-stats",
+  "description": "Live and historical health, bandwidth, SQM and Wi-Fi monitoring for the OpenWrt router.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#131519",
+  "theme_color": "#131519",
+  "icons": [
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

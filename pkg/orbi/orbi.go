@@ -39,9 +39,9 @@ type Device struct {
 	ConnOrbi  string  `json:"conn_orbi"` // MAC of the AP unit the client connects through
 	Uprate    float64 `json:"uprate_mbps"`
 	Downrate  float64 `json:"downrate_mbps"`
-	Signal    int     `json:"signal"`            // 0-100 quality, wired clients report 100
-	Linkspeed float64 `json:"linkspeed_mbps"`    // Wi-Fi PHY rate in Mbit/s
-	SSID      string  `json:"ssid"`              // SSID the client associated to
+	Signal    int     `json:"signal"`         // 0-100 quality, wired clients report 100
+	Linkspeed float64 `json:"linkspeed_mbps"` // Wi-Fi PHY rate in Mbit/s
+	SSID      string  `json:"ssid"`           // SSID the client associated to
 }
 
 // RadioInfo is one band's radio state from the WLANConfiguration SOAP
@@ -99,27 +99,27 @@ type soapEnvelope struct {
 
 // soapDevice mirrors one <Device> entry of the SOAP response.
 type soapDevice struct {
-	IP           string `xml:"IP"`
-	Name         string `xml:"Name"`
-	MAC          string `xml:"MAC"`
-	ConnType     string `xml:"ConnectionType"`
-	Signal       string `xml:"SignalStrength"`
-	Linkspeed    string `xml:"Linkspeed"`
-	SSID         string `xml:"SSID"`
-	DeviceModel  string `xml:"DeviceModel"`
-	TypeName     string `xml:"DeviceTypeNameV2"`
-	ConnAPMAC    string `xml:"ConnAPMAC"`
-	Upload       string `xml:"Upload"`
-	Download     string `xml:"Download"`
+	IP          string `xml:"IP"`
+	Name        string `xml:"Name"`
+	MAC         string `xml:"MAC"`
+	ConnType    string `xml:"ConnectionType"`
+	Signal      string `xml:"SignalStrength"`
+	Linkspeed   string `xml:"Linkspeed"`
+	SSID        string `xml:"SSID"`
+	DeviceModel string `xml:"DeviceModel"`
+	TypeName    string `xml:"DeviceTypeNameV2"`
+	ConnAPMAC   string `xml:"ConnAPMAC"`
+	Upload      string `xml:"Upload"`
+	Download    string `xml:"Download"`
 }
 
 const (
-	soapPath       = "/soap/server_sa/"
-	loginAction    = "urn:NETGEAR-ROUTER:service:DeviceConfig:1#SOAPLogin"
-	attachAction   = "urn:NETGEAR-ROUTER:service:DeviceInfo:1#GetAttachDevice2"
-	wlanService    = "urn:NETGEAR-ROUTER:service:WLANConfiguration:1"
-	deviceService  = "urn:NETGEAR-ROUTER:service:DeviceInfo:1"
-	sessionHeader  = "A7D88AE69687E58D9A00" // fixed magic session id, as the Netgear app sends
+	soapPath      = "/soap/server_sa/"
+	loginAction   = "urn:NETGEAR-ROUTER:service:DeviceConfig:1#SOAPLogin"
+	attachAction  = "urn:NETGEAR-ROUTER:service:DeviceInfo:1#GetAttachDevice2"
+	wlanService   = "urn:NETGEAR-ROUTER:service:WLANConfiguration:1"
+	deviceService = "urn:NETGEAR-ROUTER:service:DeviceInfo:1"
+	sessionHeader = "A7D88AE69687E58D9A00" // fixed magic session id, as the Netgear app sends
 )
 
 // xmlEscaper escapes the five predefined XML entities for interpolation
@@ -725,9 +725,9 @@ func (p *Poller) emitSatEvents(evs []satEvent) {
 	}
 	for _, e := range evs {
 		if e.online {
-			p.onEvent("wifi", "info", e.name+" is back online")
+			p.onEvent("satellite", "info", e.name+" is back online")
 		} else {
-			p.onEvent("wifi", "warn", e.name+" went offline")
+			p.onEvent("satellite", "warn", e.name+" went offline")
 		}
 	}
 }

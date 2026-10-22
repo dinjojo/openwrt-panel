@@ -63,23 +63,30 @@ type apiResponse struct {
 
 // Query runs an instant query and returns the resulting vector.
 func (c *Client) Query(ctx context.Context, query string) ([]Point, error) {
-	u := c.BaseURL + "/api/v1/query?query=" + url.QueryEscape(query)
-	return c.fetch(ctx, u, func(raw json.RawMessage) ([]Point, error) {
-		var r apiVectorResult
-		if err := json.Unmarshal(raw, &r); err != nil {
-			return nil, err
+	return c.fetch(ctx, c.BaseURL+"/api/v1/query?query="+url.QueryEscape(query), decodeVector)
+}
+
+// QueryAt runs an instant query evaluated at the given unix second.
+func (c *Client) QueryAt(ctx context.Context, query string, ts int64) ([]Point, error) {
+	u := c.BaseURL + "/api/v1/query?query=" + url.QueryEscape(query) + "&time=" + strconv.FormatInt(ts, 10)
+	return c.fetch(ctx, u, decodeVector)
+}
+
+func decodeVector(raw json.RawMessage) ([]Point, error) {
+	var r apiVectorResult
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return nil, err
+	}
+	p := Point{Labels: r.Metric}
+	if len(r.Value) == 2 {
+		if ts, ok := r.Value[0].(float64); ok {
+			p.TS = int64(ts)
 		}
-		p := Point{Labels: r.Metric}
-		if len(r.Value) == 2 {
-			if ts, ok := r.Value[0].(float64); ok {
-				p.TS = int64(ts)
-			}
-			if v, ok := r.Value[1].(string); ok {
-				p.Val, _ = strconv.ParseFloat(v, 64)
-			}
+		if v, ok := r.Value[1].(string); ok {
+			p.Val, _ = strconv.ParseFloat(v, 64)
 		}
-		return []Point{p}, nil
-	})
+	}
+	return []Point{p}, nil
 }
 
 // QueryRange runs a range query and returns one Series per label set.

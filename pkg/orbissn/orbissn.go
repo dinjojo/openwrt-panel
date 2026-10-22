@@ -31,6 +31,10 @@ type Snapshot struct {
 	At       time.Time          `json:"-"`
 	Stations map[string]Station `json:"stations"` // keyed by uppercase MAC
 	Shell    Status             `json:"shell"`
+	// RadioEnv is the per-radio RF environment from `iwconfig athX`
+	// (noise floor, link quality, invalid-frame counters). Radios whose
+	// output failed to parse are omitted; empty when the shell is down.
+	RadioEnv []RadioEnv `json:"radioenv"`
 	// SatelliteInfo is the raw `satelliteinfo wifi` output (best-effort,
 	// not parsed or exported yet).
 	SatelliteInfo string `json:"-"`
@@ -114,11 +118,15 @@ func (p *Poller) SetEventHook(fn func(kind, sev, msg string)) {
 // an empty station map and an all-empty Status.
 func (p *Poller) Snapshot() Snapshot {
 	if p == nil {
-		return Snapshot{Stations: map[string]Station{}}
+		return Snapshot{Stations: map[string]Station{}, RadioEnv: []RadioEnv{}}
 	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.snap // Stations is replaced, never mutated, after commit
+	snap := p.snap // Stations/RadioEnv are replaced, never mutated, after commit
+	if snap.RadioEnv == nil {
+		snap.RadioEnv = []RadioEnv{}
+	}
+	return snap
 }
 
 // Run blocks, polling once a minute until ctx is done.
@@ -179,13 +187,13 @@ func (p *Poller) poll(ctx context.Context) Snapshot {
 			errs = append(errs, tr.name+": "+p.scrub(err))
 			continue
 		}
-		stations, sat, err := collect(ctx, sh)
+		res, err := collect(ctx, sh)
 		sh.Close()
 		if err != nil {
 			errs = append(errs, tr.name+": "+p.scrub(err))
 			continue
 		}
-		snap.Stations, snap.SatelliteInfo = stations, sat
+		snap.Stations, snap.SatelliteInfo, snap.RadioEnv = res.stations, res.sat, res.radioEnv
 		snap.Shell = Status{OK: true, Via: tr.name}
 		return snap
 	}
@@ -203,9 +211,17 @@ func (p *Poller) poll(ctx context.Context) Snapshot {
 // each row's CHAN column; the label here is only a fallback.
 var radios = []string{"ath0", "ath1", "ath2"}
 
+// collected is everything one successful shell session produced.
+type collected struct {
+	stations map[string]Station
+	sat      string
+	radioEnv []RadioEnv
+}
+
 // collect runs the read-only commands on one session. It succeeds when at
-// least one radio's station list was read.
-func collect(ctx context.Context, sh shell) (map[string]Station, string, error) {
+// least one radio's station list was read; the radio-environment and
+// satellite commands are best-effort.
+func collect(ctx context.Context, sh shell) (collected, error) {
 	stations := map[string]Station{}
 	ranAny := false
 	for _, iface := range radios {
@@ -215,7 +231,7 @@ func collect(ctx context.Context, sh shell) (map[string]Station, string, error) 
 		}
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, "", errors.New("poll timed out")
+				return collected{}, errors.New("poll timed out")
 			}
 			continue
 		}
@@ -230,10 +246,22 @@ func collect(ctx context.Context, sh shell) (map[string]Station, string, error) 
 		}
 	}
 	if !ranAny {
-		return nil, "", errors.New("wlanconfig failed on all radios")
+		return collected{}, errors.New("wlanconfig failed on all radios")
+	}
+	env := []RadioEnv{}
+	for _, iface := range radios {
+		if ctx.Err() != nil {
+			break
+		}
+		// iwconfig exits non-zero on some builds even when it printed the
+		// block, so parse whatever came back and let the parser decide.
+		out, _ := sh.Run(ctx, "iwconfig "+iface)
+		if re, ok := parseIwconfig(iface, out); ok {
+			env = append(env, re)
+		}
 	}
 	sat, _ := sh.Run(ctx, "satelliteinfo wifi")
-	return stations, sat, nil
+	return collected{stations: stations, sat: sat, radioEnv: env}, nil
 }
 
 // scrub turns an error into a short message with any configured secret
