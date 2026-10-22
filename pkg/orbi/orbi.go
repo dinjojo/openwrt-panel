@@ -65,6 +65,12 @@ type SatelliteInfo struct {
 	BackhaulConn int    `json:"backhaul_conn"` // 1 = wireless backhaul
 	BackhaulRSSI int    `json:"backhaul_rssi"`
 	Firmware     string `json:"firmware"`
+	// Online is false for a satellite seen earlier (since process start)
+	// that has been missing from two consecutive successful
+	// GetAllSatellites polls. Offline entries keep their last known
+	// name/model/IP/firmware/hop; BackhaulConn and BackhaulRSSI are zeroed
+	// because a stale backhaul reading would be misleading.
+	Online bool `json:"online"`
 }
 
 // State is the latest Orbi snapshot.
@@ -77,7 +83,7 @@ type State struct {
 	APMode     bool            `json:"ap_mode"`
 	Devices    []Device        `json:"devices"`
 	Radios     []RadioInfo     `json:"radios"`     // empty when the radio query failed
-	Satellites []SatelliteInfo `json:"satellites"` // empty when the satellite query failed
+	Satellites []SatelliteInfo `json:"satellites"` // every satellite seen since start; last known list when the query failed
 }
 
 // soapEnvelope is the GetAttachDevice2 response we parse.
@@ -150,6 +156,7 @@ type Poller struct {
 	state   State
 	seen    map[string]string // mac -> contype from the previous successful poll
 	seenOK  bool              // false until the first device poll succeeded
+	sats    satMemory         // satellites remembered across polls (poll goroutine only)
 	onEvent func(kind, sev, msg string)
 }
 
@@ -239,8 +246,11 @@ func (p *Poller) refresh() {
 	}
 	st.Devices = devs
 	st.Radios = p.soapRadios()
-	st.Satellites = p.soapSatellites()
+	sats, serr := p.soapSatellites()
+	var satEvents []satEvent
+	st.Satellites, satEvents = p.sats.merge(sats, serr == nil)
 	p.commit(st)
+	p.emitSatEvents(satEvents)
 	p.diffEvents(devs)
 	p.pushVM(devs, st.Radios)
 }
@@ -572,14 +582,15 @@ func (p *Poller) diffEvents(devs []Device) {
 }
 
 // soapSatellites reads the mesh unit list (GetAllSatellites). Best-effort:
-// on failure the snapshot simply carries no satellite info.
-func (p *Poller) soapSatellites() []SatelliteInfo {
+// on failure it returns an error and the caller keeps the remembered list.
+func (p *Poller) soapSatellites() ([]SatelliteInfo, error) {
 	raw, err := p.soapPost(deviceService+"#GetAllSatellites", soapCallXML(deviceService, "GetAllSatellites"))
-	if err != nil || !strings.Contains(raw, "<ResponseCode>000") {
-		if err != nil {
-			log.Printf("[orbi] satellite query failed: %v", err)
-		}
-		return nil
+	if err != nil {
+		log.Printf("[orbi] satellite query failed: %v", err)
+		return nil, err
+	}
+	if !strings.Contains(raw, "<ResponseCode>000") {
+		return nil, fmt.Errorf("orbi: GetAllSatellites returned a non-zero response code")
 	}
 	// Seek each <satellite> element inside the envelope and decode it.
 	var out []SatelliteInfo
@@ -617,9 +628,108 @@ func (p *Poller) soapSatellites() []SatelliteInfo {
 			// the firmware reports when the backhaul is not wireless.
 			BackhaulRSSI: atoiDefault(fields.SignalStrength, 0),
 			Firmware:     strings.TrimSpace(fields.FWVersion),
+			Online:       true,
 		})
 	}
-	return out
+	return out, nil
+}
+
+// satMissLimit is how many consecutive successful satellite polls a
+// satellite must be absent from before it is reported offline — one
+// empty or partial answer must not flap the UI or the event feed.
+const satMissLimit = 2
+
+// satMemory remembers every satellite seen since process start, keyed by
+// MAC, so a powered-off unit stays visible as offline instead of vanishing.
+type satMemory struct {
+	order  []string                 // keys in first-seen order (stable UI ordering)
+	byKey  map[string]SatelliteInfo // last known info
+	missed map[string]int           // consecutive successful polls the satellite was absent from
+}
+
+type satEvent struct {
+	name   string
+	online bool
+}
+
+func satKey(s SatelliteInfo) string {
+	if s.MAC != "" {
+		return s.MAC
+	}
+	return "name:" + s.Name
+}
+
+func satName(s SatelliteInfo) string {
+	switch {
+	case s.Name != "":
+		return s.Name
+	case s.Model != "":
+		return s.Model
+	default:
+		return s.MAC
+	}
+}
+
+// merge folds one poll result into the memory and returns the full list
+// to report plus any online/offline transitions. ok=false means the query
+// failed: the remembered list is returned unchanged and no miss counters
+// advance (a failed poll is not evidence the satellite is gone).
+func (m *satMemory) merge(latest []SatelliteInfo, ok bool) ([]SatelliteInfo, []satEvent) {
+	if m.byKey == nil {
+		m.byKey = map[string]SatelliteInfo{}
+		m.missed = map[string]int{}
+	}
+	var evs []satEvent
+	if ok {
+		present := make(map[string]bool, len(latest))
+		for _, s := range latest {
+			k := satKey(s)
+			if k == "name:" {
+				continue // neither MAC nor name: cannot be tracked
+			}
+			present[k] = true
+			prev, known := m.byKey[k]
+			if !known {
+				m.order = append(m.order, k)
+			} else if !prev.Online {
+				evs = append(evs, satEvent{name: satName(s), online: true})
+			}
+			s.Online = true
+			m.byKey[k] = s
+			m.missed[k] = 0
+		}
+		for _, k := range m.order {
+			if present[k] {
+				continue
+			}
+			m.missed[k]++
+			s := m.byKey[k]
+			if s.Online && m.missed[k] >= satMissLimit {
+				s.Online = false
+				s.BackhaulConn, s.BackhaulRSSI = 0, 0
+				m.byKey[k] = s
+				evs = append(evs, satEvent{name: satName(s), online: false})
+			}
+		}
+	}
+	out := make([]SatelliteInfo, 0, len(m.order))
+	for _, k := range m.order {
+		out = append(out, m.byKey[k])
+	}
+	return out, evs
+}
+
+func (p *Poller) emitSatEvents(evs []satEvent) {
+	if p.onEvent == nil {
+		return
+	}
+	for _, e := range evs {
+		if e.online {
+			p.onEvent("wifi", "info", e.name+" is back online")
+		} else {
+			p.onEvent("wifi", "warn", e.name+" went offline")
+		}
+	}
 }
 
 // apNameFor resolves one AP-unit MAC to a friendly name. Satellites list

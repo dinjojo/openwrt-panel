@@ -28,6 +28,7 @@ import (
 	"github.com/galpt/cake-stats/pkg/history"
 	"github.com/galpt/cake-stats/pkg/log"
 	"github.com/galpt/cake-stats/pkg/orbi"
+	"github.com/galpt/cake-stats/pkg/orbissn"
 	"github.com/galpt/cake-stats/pkg/parser"
 	"github.com/galpt/cake-stats/pkg/types"
 	"github.com/galpt/cake-stats/pkg/vm"
@@ -59,6 +60,7 @@ type Server struct {
 	wan          *wan.Poller
 	sys          *sysmon.Pollers
 	orbi         *orbi.Poller
+	shell        *orbissn.Poller // Orbi shell (SSH/telnet) poller; nil or disabled when unconfigured
 	events       *events.Store
 	version      string
 	configHashes map[string]string // last sha256 of each /etc/config file
@@ -114,6 +116,10 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		s.orbi.SetEventHook(s.events.Add)
 	}
 	go s.orbiRun(ctx)
+	if s.shell.Enabled() {
+		s.shell.SetEventHook(s.events.Add)
+		go s.shell.Run(ctx)
+	}
 	go s.watchEvents(ctx)
 	go s.runPoller(ctx)
 	go s.clientStore.Run(ctx, s.vmc) // per-client accounting poller
@@ -855,10 +861,24 @@ func (s *Server) orbiRun(ctx context.Context) {
 	s.orbi.Run(ctx)
 }
 
-// handleAPIOrbi reports the Orbi AP snapshot: reachability, firmware and
-// the attached-device list (band, per-device rates).
+// SetShellPoller registers the Orbi shell poller (per-station Wi-Fi stats
+// over SSH/telnet). Call before Run; Run starts it when it is configured.
+func (s *Server) SetShellPoller(p *orbissn.Poller) { s.shell = p }
+
+// orbiPayload is the /api/orbi body: the SOAP snapshot plus the shell
+// poller's per-station stats and status (both always present).
+type orbiPayload struct {
+	orbi.State
+	Stations map[string]orbissn.Station `json:"stations"`
+	Shell    orbissn.Status             `json:"shell"`
+}
+
+// handleAPIOrbi reports the Orbi AP snapshot: reachability, firmware,
+// the attached-device list (band, per-device rates), satellites (with
+// online state), and shell-sourced per-station radio stats.
 func (s *Server) handleAPIOrbi(c fiber.Ctx) error {
-	st := s.orbi.Snapshot()
+	sh := s.shell.Snapshot()
+	st := orbiPayload{State: s.orbi.Snapshot(), Stations: sh.Stations, Shell: sh.Shell}
 	c.Set("Content-Type", "application/json; charset=utf-8")
 	b, _ := json.Marshal(st)
 	return c.Send(b)

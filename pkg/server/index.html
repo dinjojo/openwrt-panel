@@ -254,6 +254,72 @@
 
     <!-- ═══ Tab: Clients (per-device live + history) ══════════════════════ -->
     <section id="tab-clients" role="tabpanel" class="hidden space-y-5">
+
+      <!-- Live per-client tables: Wi-Fi (Orbi mesh) above LAN. Both share
+           one column layout (table-fixed + colgroup) so the stacked columns
+           line up, and one filter input. The Wi-Fi block stays hidden until
+           /api/orbi reports a configured AP. -->
+      <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden">
+        <div id="cl-wifi-wrap" class="hidden">
+          <div id="cl-wifi-hdr" class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
+            <span class="text-[15px] font-bold uppercase tracking-widest text-[var(--muted)]">
+              Wi-Fi devices &mdash; live
+              <span id="cl-orbi-note" class="normal-case tracking-normal font-medium text-[var(--faint)] ml-2"></span></span>
+          </div>
+          <div class="overflow-x-auto scroll-thin">
+            <table class="w-full table-fixed text-xs" style="min-width:820px">
+              <colgroup>
+                <col /><col style="width:150px" /><col style="width:96px" /><col style="width:96px" />
+                <col style="width:96px" /><col style="width:96px" /><col style="width:64px" />
+              </colgroup>
+              <thead>
+                <tr class="text-left text-[var(--muted)] border-b border-[var(--line)] bg-[var(--panel2)]">
+                  <th class="px-4 py-2.5 font-semibold">Device</th>
+                  <th class="px-3 py-2.5 font-semibold">Status</th>
+                  <th class="px-3 py-2.5 font-semibold text-right">&#9660; rate</th>
+                  <th class="px-3 py-2.5 font-semibold text-right">&#9650; rate</th>
+                  <th class="px-3 py-2.5 font-semibold text-right">&#9660; total</th>
+                  <th class="px-3 py-2.5 font-semibold text-right">&#9650; total</th>
+                  <th class="px-3 py-2.5 font-semibold text-right">conns</th>
+                </tr>
+              </thead>
+              <tbody id="cl-wifi-tbody">
+                <tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">Loading clients…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="cl-lan-hdr" class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
+          <span class="text-[15px] font-bold uppercase tracking-widest text-[var(--muted)]">
+            LAN devices &mdash; live</span>
+          <!-- Filters both tables; JS moves it into the Wi-Fi header when that table is shown. -->
+          <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
+                 class="bg-[var(--panel2)] border border-[var(--line)] rounded-lg px-3 py-1.5 text-xs
+                        text-[var(--text)] placeholder-[var(--faint)] outline-none focus:border-[var(--accent)] w-56" />
+        </div>
+        <div class="overflow-x-auto scroll-thin">
+          <table class="w-full table-fixed text-xs" style="min-width:820px">
+            <colgroup>
+              <col /><col style="width:150px" /><col style="width:96px" /><col style="width:96px" />
+              <col style="width:96px" /><col style="width:96px" /><col style="width:64px" />
+            </colgroup>
+            <thead>
+              <tr class="text-left text-[var(--muted)] border-b border-[var(--line)] bg-[var(--panel2)]">
+                <th class="px-4 py-2.5 font-semibold">Device</th>
+                <th class="px-3 py-2.5 font-semibold">Status</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9660; rate</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9650; rate</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9660; total</th>
+                <th class="px-3 py-2.5 font-semibold text-right">&#9650; total</th>
+                <th class="px-3 py-2.5 font-semibold text-right">conns</th>
+              </tr>
+            </thead>
+            <tbody id="cl-tbody">
+              <tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">Loading clients…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
       <!-- Live summary strip -->
       <div class="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
@@ -295,36 +361,7 @@
         <div id="cl-charts" class="space-y-4"></div>
       </div>
 
-      <!-- Live per-client table -->
-      <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden">
-        <div class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
-          <span class="text-[12.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
-            LAN devices &mdash; live
-            <span id="cl-orbi-note" class="normal-case tracking-normal font-medium text-[var(--faint)] ml-2"></span></span>
-          <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
-                 class="bg-[var(--panel2)] border border-[var(--line)] rounded-lg px-3 py-1.5 text-xs
-                        text-[var(--text)] placeholder-[var(--faint)] outline-none focus:border-[var(--accent)] w-56" />
-        </div>
-        <div class="overflow-x-auto scroll-thin">
-          <table class="w-full text-xs" style="min-width:720px">
-            <thead>
-              <tr class="text-left text-[var(--muted)] border-b border-[var(--line)] bg-[var(--panel2)]">
-                <th class="px-4 py-2.5 font-semibold">Device</th>
-                <th class="px-3 py-2.5 font-semibold">Status</th>
-                <th class="px-3 py-2.5 font-semibold text-right">&#9660; rate</th>
-                <th class="px-3 py-2.5 font-semibold text-right">&#9650; rate</th>
-                <th class="px-3 py-2.5 font-semibold text-right">&#9660; total</th>
-                <th class="px-3 py-2.5 font-semibold text-right">&#9650; total</th>
-                <th class="px-3 py-2.5 font-semibold text-right">conns</th>
-              </tr>
-            </thead>
-            <tbody id="cl-tbody">
-              <tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">Loading clients…</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+</section>
 
     <!-- ═══ Tab: System (router health history) ═══════════════════════════ -->
     <section id="tab-system" role="tabpanel" class="hidden">
@@ -1546,26 +1583,44 @@
     let orbiByMac = {};
     let orbiApNames = {}; // satellite MAC -> friendly name (RBS50…)
     let orbiRouterName = 'Orbi'; // model of the AP itself, from /api/orbi
+    let orbiSatOffline = {}; // satellite MAC -> true when /api/orbi says online === false
+    let orbiPresent = false; // Orbi integration configured (non-zero snapshot)
     let orbiAt = 0;
+    /** Small muted-red pill shown next to a satellite that dropped off the mesh. */
+    const OFFLINE_BADGE = '<span class="inline-flex items-center rounded px-1.5 text-[11px] font-semibold leading-[16px] align-middle"' +
+      ' style="color:var(--red);background:color-mix(in srgb, var(--red) 12%, transparent)">offline</span>';
     async function loadOrbi() {
       try {
         const d = await fetch(appURL('/api/orbi')).then(r => r.json());
         const m = {};
         const apn = {};
+        const off = {};
         (d.devices || []).forEach(dev => {
           m[(dev.mac || '').toUpperCase()] = dev;
           if (dev.contype === '-') { // satellites list themselves with "-"
             apn[(dev.mac || '').toUpperCase()] = (dev.name && dev.name.toLowerCase() !== 'unknown' ? dev.name : dev.devtype) || dev.mac;
           }
         });
+        // A powered-off satellite drops out of devices but stays in
+        // satellites with online:false — keep its name resolvable.
+        (d.satellites || []).forEach(s => {
+          const k = (s.mac || '').toUpperCase();
+          if (!k) return;
+          if (!apn[k]) apn[k] = s.model || s.name || s.mac;
+          if (s.online === false) off[k] = true;
+        });
         orbiByMac = m;
         orbiApNames = apn;
+        orbiSatOffline = off;
         orbiRouterName = d.model || orbiRouterName;
+        // Disabled integration serves an empty snapshot with a zero "at".
+        orbiPresent = !!(d.reachable || (d.at && !String(d.at).startsWith('0001-')));
         orbiAt = Date.now();
         const el = document.getElementById('cl-orbi-note');
         if (el) el.textContent = d.reachable
           ? ((d.model || 'Orbi AP') + ' · ' + (d.devices || []).length + ' attached' + (d.busy ? ' · device list unavailable' : ''))
           : 'Orbi AP not responding';
+        clSyncWifiTable();
         if (document.querySelector('.tab-btn[data-tab="clients"].tab-active')) renderClientsTable();
         renderOverviewWifi(d);
         loadWifiSpark();
@@ -1600,10 +1655,28 @@
         const k = (x.conn_orbi || '').toUpperCase();
         (perAp[k] = perAp[k] || []).push(x);
       }
+      // Every known satellite keeps a row even with no attached clients:
+      // an online-but-idle unit shows "0 clients" with its backhaul, a
+      // powered-off one shows "RBS50 · offline".
+      (d.satellites || []).forEach(s => {
+        const k = (s.mac || '').toUpperCase();
+        if (k && !perAp[k]) perAp[k] = [];
+      });
       const apRows = Object.keys(perAp).sort((a, b) => perAp[b].length - perAp[a].length).map(mac => {
         const unit = sats[mac], list = perAp[mac];
         const sat = (d.satellites || []).find(s => (s.mac || '').toUpperCase() === mac);
-        const label = sat ? sat.model : ((d.model || 'Orbi router') + ' · router');
+        const label = sat ? h(sat.model || sat.name || sat.mac) : h((d.model || 'Orbi router') + ' · router');
+        if (sat && sat.online === false) {
+          return '<div class="flex items-center gap-3 rounded-lg px-3 py-2" style="background:var(--panel2)">' +
+            '<span class="shrink-0" style="color:var(--faint)">' + ICON_ROUTER + '</span>' +
+            '<div class="min-w-0 flex-1">' +
+              '<div class="text-[13.5px] font-semibold text-[var(--text)] truncate">' + label +
+                ' <span class="text-[var(--faint)] font-normal">·</span> ' + OFFLINE_BADGE + '</div>' +
+              '<div class="text-[12.5px] text-[var(--muted)]">not seen in the latest poll — powered off or out of reach' +
+                (list.length ? ' · ' + list.length + ' client' + (list.length === 1 ? '' : 's') + ' last seen here' : '') + '</div>' +
+            '</div>' +
+          '</div>';
+        }
         const bh = !sat ? '' : sat.backhaul_conn
           ? ' · backhaul ' + sat.backhaul_rssi + ' dBm'
           : sat.ip ? ' · wired backhaul · ' + sat.ip : '';
@@ -1672,17 +1745,33 @@
       return ct || '';
     }
 
+    /** Show the Wi-Fi table only when the Orbi integration is configured,
+     *  and keep the shared filter input in whichever header is on top. */
+    function clSyncWifiTable() {
+      const wrap = document.getElementById('cl-wifi-wrap');
+      const input = document.getElementById('cl-filter');
+      const lanHdr = document.getElementById('cl-lan-hdr');
+      if (!wrap || !input || !lanHdr) return;
+      wrap.classList.toggle('hidden', !orbiPresent);
+      lanHdr.classList.toggle('border-t', orbiPresent);
+      const home = orbiPresent ? document.getElementById('cl-wifi-hdr') : lanHdr;
+      if (input.parentElement !== home) home.appendChild(input); // node move keeps focus handlers
+    }
+
     function renderClientsTable() {
       const tbody = document.getElementById('cl-tbody');
-      if (!tbody) return;
+      const wbody = document.getElementById('cl-wifi-tbody');
+      if (!tbody || !wbody) return;
+      clSyncWifiTable();
       const filter = (document.getElementById('cl-filter').value || '').toLowerCase();
       const rows = clientsCache.filter(c => !filter ||
         (c.name + ' ' + c.ip + ' ' + c.mac).toLowerCase().includes(filter));
+      const emptyRow = msg => '<tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">' + msg + '</td></tr>';
 
       if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-8 text-center text-[var(--muted)]">' +
-          (filter ? 'No clients match “' + h(filter) + '”' : 'No clients seen yet — data appears within 30 seconds.') +
-          '</td></tr>';
+        const msg = filter ? 'No clients match “' + h(filter) + '”' : 'No clients seen yet — data appears within 30 seconds.';
+        tbody.innerHTML = emptyRow(msg);
+        wbody.innerHTML = emptyRow(msg);
         return;
       }
 
@@ -1694,12 +1783,6 @@
         wired: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></svg>',
         offline: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
       };
-      const groupHdr = (label, icon, color) =>
-        '<tr class="pointer-events-none"><td colspan="7" class="px-1 pt-3 pb-1">' +
-        '<div class="flex items-center gap-2 rounded-lg px-3 py-1.5" style="background:color-mix(in srgb, ' + color + ' 9%, transparent); border-left:3px solid ' + color + '">' +
-          '<span class="shrink-0" style="color:' + color + '">' + icon + '</span>' +
-          '<span class="text-[12.5px] font-bold uppercase tracking-widest" style="color:' + color + '">' + label + '</span>' +
-        '</div></td></tr>';
       const isWiFiRow = c => {
         const ob = orbiByMac[(c.mac || '').toUpperCase()];
         return !!(ob && (ob.contype === '2.4G' || ob.contype === '5G'));
@@ -1711,12 +1794,29 @@
         return (oa.signal || 0) - (obb.signal || 0);
       });
       const wired = online.filter(c => !isWiFiRow(c));
+      // Wi-Fi table: the Wi-Fi group. LAN table: wired, then offline (an
+      // offline device has no Orbi association, so it can't be placed).
+      const wsec = [];
+      if (wifi.length) wsec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true, icon: ICON.wifi, color: 'var(--accent)' });
       const sec = [];
-      if (wifi.length) sec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true, icon: ICON.wifi, color: 'var(--accent)' });
       if (wired.length) sec.push({ label: 'Wired — ' + wired.length, list: wired, wifi: false, icon: ICON.wired, color: 'var(--muted)' });
       if (offline.length) sec.push({ label: 'Offline — ' + offline.length, list: offline, wifi: false, icon: ICON.offline, color: 'var(--faint)' });
 
-      tbody.innerHTML = sec.map(s => groupHdr(s.label, s.icon, s.color) + s.list.map(c => {
+      const subtleRow = msg => '<tr><td colspan="7" class="px-4 py-5 text-center text-[12.5px] text-[var(--faint)]">' + msg + '</td></tr>';
+      wbody.innerHTML = wsec.length ? renderSecs(wsec)
+        : subtleRow(filter ? 'No Wi-Fi clients match “' + h(filter) + '”' : 'No Wi-Fi clients right now');
+      tbody.innerHTML = sec.length ? renderSecs(sec)
+        : subtleRow(filter ? 'No LAN clients match “' + h(filter) + '”' : 'No wired clients right now');
+    }
+
+    function renderSecs(sec) {
+      const groupHdr = (label, icon, color) =>
+        '<tr class="pointer-events-none"><td colspan="7" class="px-1 pt-3 pb-1">' +
+        '<div class="flex items-center gap-2 rounded-lg px-3 py-1.5" style="background:color-mix(in srgb, ' + color + ' 9%, transparent); border-left:3px solid ' + color + '">' +
+          '<span class="shrink-0" style="color:' + color + '">' + icon + '</span>' +
+          '<span class="text-[12.5px] font-bold uppercase tracking-widest" style="color:' + color + '">' + label + '</span>' +
+        '</div></td></tr>';
+      return sec.map(s => groupHdr(s.label, s.icon, s.color) + s.list.map(c => {
         const dot = c.online
           ? '<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[var(--green)]"></span>online</span>'
           : '<span class="inline-flex items-center gap-1.5 text-[var(--faint)]"><span class="w-2 h-2 rounded-full bg-[var(--faint)]"></span>' +
@@ -1735,19 +1835,24 @@
             bars += '<span style="display:inline-block;width:3px;height:' + hs[i] + 'px;border-radius:1px;background:' + (i < lvl ? col : 'var(--line)') + '"></span>';
           }
           sigHTML = '<span class="inline-flex items-end gap-[2px] mr-1 align-middle">' + bars + '</span>';
-          obSub = 'Orbi · ' + (orbiApNames[(ob.conn_orbi || '').toUpperCase()] || orbiRouterName) + ' · ' + obBand(ob.contype) + ' · ' + sig + '%' +
-            (ob.linkspeed_mbps ? ' · ' + ob.linkspeed_mbps + ' Mbit/s' : '');
+          // Escaped here (not at the join) so the offline badge can be HTML.
+          const apMac = (ob.conn_orbi || '').toUpperCase();
+          obSub = 'Orbi · ' + h(orbiApNames[apMac] || orbiRouterName) +
+            (orbiSatOffline[apMac] ? ' · ' + OFFLINE_BADGE : '') +
+            ' · ' + h(obBand(ob.contype)) + ' · ' + sig + '%' +
+            (ob.linkspeed_mbps ? ' · ' + h(String(ob.linkspeed_mbps)) + ' Mbit/s' : '') +
+            (c.rx_rate > 0 ? ' · ↓ ' + fmtBits(c.rx_rate) : '');
         } else if (ob && ob.contype !== '-') {
           obSub = 'Orbi · wired';
         }
-        const sub = [c.ip, c.vendor, obSub].filter(Boolean).join(' · ');
+        const sub = [h(c.ip), h(c.vendor), obSub].filter(Boolean).join(' · ');
         return '<tr data-mac="' + h(c.mac) + '" data-name="' + h(c.name || c.mac) + '"' +
           ' data-ip="' + h(c.ip) + '" data-vendor="' + h(c.vendor || '') + '"' +
           ' title="View connection history"' +
           ' class="border-b border-[var(--line)]/60 hover:bg-[var(--panel2)]/70">' +
           '<td class="px-4 py-2.5">' +
             '<span class="font-semibold text-[var(--text)]">' + h(c.name || c.mac) + '</span>' +
-            '<span class="num text-[12.5px] text-[var(--faint)] block">' + (s.wifi ? sigHTML : '') + h(sub) + '</span>' +
+            '<span class="num text-[12.5px] text-[var(--faint)] block">' + (s.wifi ? sigHTML : '') + sub + '</span>' +
           '</td>' +
           '<td class="px-3 py-2.5 text-[var(--muted)]">' + dot + '</td>' +
           '<td class="px-3 py-2.5 text-right num ' + (c.rx_rate > 0 ? 'text-[var(--text)]' : 'text-[var(--faint)]') + '">' + fmtBits(c.rx_rate) + '</td>' +

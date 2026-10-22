@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/galpt/cake-stats/pkg/log"
 	"github.com/galpt/cake-stats/pkg/orbi"
+	"github.com/galpt/cake-stats/pkg/orbissn"
 	"github.com/galpt/cake-stats/pkg/server"
 	"github.com/rs/zerolog"
 )
@@ -27,6 +29,11 @@ func main() {
 	orbiURL := flag.String("orbi-url", os.Getenv("ORBI_URL"), "Orbi AP base URL, e.g. http://192.168.1.100 (empty disables Orbi monitoring)")
 	orbiUser := flag.String("orbi-user", os.Getenv("ORBI_USER"), "Orbi admin user")
 	orbiPass := flag.String("orbi-pass", os.Getenv("ORBI_PASS"), "Orbi admin password")
+	// Shell access to the Orbi for per-client radio stats. The host is the
+	// -orbi-url host. Never logged; keep the values in a root-only env file.
+	orbiSSHUser := flag.String("orbi-ssh-user", os.Getenv("ORBI_SSH_USER"), "Orbi SSH user for per-client Wi-Fi stats (default root when -orbi-ssh-pass is set)")
+	orbiSSHPass := flag.String("orbi-ssh-pass", os.Getenv("ORBI_SSH_PASS"), "Orbi SSH password (enables the SSH shell poller; host taken from -orbi-url)")
+	orbiTelnetPass := flag.String("orbi-telnet-pass", os.Getenv("ORBI_TELNET_PASS"), "Orbi telnet password (enables telnet shell polling, fallback after SSH; user = -orbi-ssh-user or root)")
 	showVer := flag.Bool("version", false, "print version and exit")
 
 	flag.Usage = func() {
@@ -48,6 +55,16 @@ func main() {
 	defer stop()
 
 	srv := server.New(addr, *interval, *histCap, *vmURL, Version, orbi.New(*orbiURL, *orbiUser, *orbiPass, nil))
+	orbiHost := ""
+	if u, err := url.Parse(*orbiURL); err == nil && *orbiURL != "" {
+		orbiHost = u.Hostname()
+	}
+	srv.SetShellPoller(orbissn.New(orbissn.Config{
+		Host:       orbiHost,
+		SSHUser:    *orbiSSHUser,
+		SSHPass:    *orbiSSHPass,
+		TelnetPass: *orbiTelnetPass,
+	}))
 	if err := srv.Run(ctx, addr); err != nil {
 		log.Logger.Fatal().Err(err).Msg("fatal")
 	}
