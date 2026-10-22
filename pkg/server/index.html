@@ -12,14 +12,14 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css" />
   <style>
     :root {
-      /* Light — "porcelain": cool grey-blue surfaces, ink text, sky accent.
-         Deliberately greyed, not white — softer on the eyes for long
-         sessions, with a dark ink foreground for strong contrast. */
-      --bg: #DCE2EB; --panel: #EBEFF5; --panel2: #E1E7F0; --line: #BFCADA;
-      --text: #16202E; --muted: #3E4C63; --faint: #66738B;
-      --green: #157A43; --amber: #96610A; --red: #B8362E; --blue: #0B6FA4;
-      --head: #E3E9F1; --accent-text: #F4F7FB;
-      --head-wash: linear-gradient(180deg, rgba(11,111,164,0.06), transparent);
+      /* Light — "porcelain": warm neutral grey surfaces, ink text, teal
+         accent. Deliberately greyed, not white — softer on the eyes for
+         long sessions, with a dark ink foreground for strong contrast. */
+      --bg: #E9E9E6; --panel: #F6F6F4; --panel2: #EFF0EC; --line: #D3D4CD;
+      --text: #1A1D1C; --muted: #4A5049; --faint: #6E746C;
+      --green: #157A43; --amber: #96610A; --red: #B8362E; --accent: #0C7A6B;
+      --head: #E2E3DF; --accent-text: #F6F6F4;
+      --head-wash: linear-gradient(180deg, rgba(12,122,107,0.06), transparent);
       --shadow: 0 1px 3px rgba(20,32,51,0.10), 0 1px 2px rgba(20,32,51,0.06);
       color-scheme: light;
     }
@@ -30,21 +30,21 @@
       letter-spacing: .025em; color: var(--muted);
       transition: color .15s, background .15s; text-align: left; }
     .tab-btn:hover { color: var(--text); }
-    .tab-btn.tab-active { background: var(--blue); color: var(--accent-text); }
+    .tab-btn.tab-active { background: var(--accent); color: var(--accent-text); }
     #tabbar { padding-bottom: max(.25rem, env(safe-area-inset-bottom)); }
     #tabbar .tab-btn { width: auto; flex: 1 1 0; flex-direction: column; gap: .125rem;
       padding: .4rem 0 .3rem; font-size: .625rem; align-items: center;
       justify-content: center; text-align: center; }
     html[data-theme="dark"] {
-      /* Dark — cool slate ops console: navy-graphite surfaces, desaturated
-         status tints, sky accent. Per ui-ux guidance: elevate surfaces in
-         small steps, never pure black, 4.5:1 on text. Muted/faint kept
-         bright — small grey text on navy must still read. */
-      --bg: #0F172A; --panel: #1A2438; --panel2: #223050; --line: #31415F;
-      --text: #F8FAFF; --muted: #D4DDEC; --faint: #B4C1D9;
-      --green: #7EE2A8; --amber: #FBBF24; --red: #F87171; --blue: #38BDF8;
-      --head: #16223A; --accent-text: #0F172A;
-      --head-wash: linear-gradient(180deg, rgba(56,189,248,0.07), transparent);
+      /* Dark — graphite ops console: neutral charcoal surfaces (no blue
+         cast), warm grey secondary text, teal accent. Per ui-ux guidance:
+         elevate surfaces in small steps, never pure black, 4.5:1 on text.
+         Muted/faint kept bright — small grey text on charcoal must read. */
+      --bg: #131519; --panel: #1B1E24; --panel2: #242830; --line: #353A44;
+      --text: #F5F6F7; --muted: #D3D6DB; --faint: #A6ACB8;
+      --green: #7EE2A8; --amber: #FBBF24; --red: #F87171; --accent: #2DD4BF;
+      --head: #171A1F; --accent-text: #0E1414;
+      --head-wash: linear-gradient(180deg, rgba(45,212,191,0.06), transparent);
       --shadow: none;
       color-scheme: dark;
     }
@@ -98,8 +98,8 @@
          style="width:15rem">
     <div class="flex items-center justify-between px-1 mb-4">
       <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap">
-        <div class="w-2.5 h-2.5 shrink-0 rounded-sm bg-[var(--blue)] shadow-[0_0_8px_var(--blue)]"></div>
-        <span class="font-extrabold tracking-tight text-lg display sidebar-label">cake<span class="text-[var(--blue)]">-stats</span></span>
+        <div class="w-2.5 h-2.5 shrink-0 rounded-sm bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]"></div>
+        <span class="font-extrabold tracking-tight text-lg display sidebar-label">cake<span class="text-[var(--accent)]">-stats</span></span>
       </div>
       <button id="sidebar-toggle" aria-label="Collapse sidebar" title="Collapse sidebar"
               class="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-[var(--line)]
@@ -133,8 +133,8 @@
                  flex items-center justify-between gap-2
                  sticky top-0 z-50">
     <div class="flex items-center gap-3 min-w-0">
-      <div class="md:hidden w-2.5 h-2.5 rounded-sm bg-[var(--blue)] shadow-[0_0_8px_var(--blue)]"></div>
-      <span class="md:hidden font-extrabold tracking-tight text-lg display">cake<span class="text-[var(--blue)]">-stats</span></span>
+      <div class="md:hidden w-2.5 h-2.5 rounded-sm bg-[var(--accent)] shadow-[0_0_8px_var(--accent)]"></div>
+      <span class="md:hidden font-extrabold tracking-tight text-lg display">cake<span class="text-[var(--accent)]">-stats</span></span>
       <span id="page-title" class="hidden md:block text-sm font-semibold text-[var(--muted)]"></span>
     </div>
     <div class="flex items-center gap-3 text-xs">
@@ -172,7 +172,7 @@
           </div>
           <div class="flex items-end gap-8 mt-3">
             <div>
-              <div class="num display text-4xl font-bold leading-none" style="color:var(--blue)"><span id="ov-down">–</span></div>
+              <div class="num display text-4xl font-bold leading-none" style="color:var(--accent)"><span id="ov-down">–</span></div>
               <div class="text-[12.5px] text-[var(--muted)] mt-1">down &middot; Mbit/s</div>
             </div>
             <div>
@@ -253,8 +253,8 @@
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
           <div class="text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)]">
-            <span class="text-[var(--blue)]">&#9650;</span> LAN upload</div>
-          <div id="cl-tx" class="num text-2xl font-bold mt-1 text-[var(--blue)]">–</div>
+            <span class="text-[var(--accent)]">&#9650;</span> LAN upload</div>
+          <div id="cl-tx" class="num text-2xl font-bold mt-1 text-[var(--accent)]">–</div>
           <div class="text-[12.5px] text-[var(--muted)] mt-0.5">all clients, live</div>
         </div>
         <div class="bg-[var(--panel2)]/60 rounded-xl px-4 pt-3 pb-2">
@@ -287,7 +287,7 @@
             <span id="cl-orbi-note" class="normal-case tracking-normal font-medium text-[var(--faint)] ml-2"></span></span>
           <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
                  class="bg-[var(--panel2)] border border-[var(--line)] rounded-lg px-3 py-1.5 text-xs
-                        text-[var(--text)] placeholder-[var(--faint)] outline-none focus:border-[var(--blue)] w-56" />
+                        text-[var(--text)] placeholder-[var(--faint)] outline-none focus:border-[var(--accent)] w-56" />
         </div>
         <div class="overflow-x-auto scroll-thin">
           <table class="w-full text-xs" style="min-width:720px">
@@ -492,7 +492,7 @@
         <div><span class="text-[var(--muted)]">&#9660; downloaded</span>
           <span id="clm-rx" class="num font-bold text-[var(--green)] ml-1.5">&ndash;</span></div>
         <div><span class="text-[var(--muted)]">&#9650; uploaded</span>
-          <span id="clm-tx" class="num font-bold text-[var(--blue)] ml-1.5">&ndash;</span></div>
+          <span id="clm-tx" class="num font-bold text-[var(--accent)] ml-1.5">&ndash;</span></div>
       </div>
       <!-- Chart area -->
       <div id="clm-charts" class="overflow-y-auto scroll-thin p-5 space-y-6 flex-1"></div>
@@ -698,7 +698,7 @@
               'title="Tap for detailed charts">' +
           '<div class="grid gap-3 grid-cols-2 lg:grid-cols-4">' +
             kpiCard('tx-' + n, 'Throughput', 'var(--green)', { bar: true }) +
-            kpiCard('lat-' + n, 'Waiting time', 'var(--blue)') +
+            kpiCard('lat-' + n, 'Waiting time', 'var(--accent)') +
             kpiCard('dr-' + n, 'Drops', 'var(--red)') +
             kpiCard('bl-' + n, 'Waiting packets', 'var(--amber)', { spark: false }) +
           '</div>' +
@@ -719,7 +719,7 @@
       const lastDr = buf.dr[buf.dr.length - 1] || 0;
 
       drawSparkline(document.getElementById('spk-tx-' + name), buf.tx, 'var(--green)');
-      drawSparkline(document.getElementById('spk-lat-' + name), buf.av, 'var(--blue)');
+      drawSparkline(document.getElementById('spk-lat-' + name), buf.av, 'var(--accent)');
       drawSparkline(
         document.getElementById('spk-dr-' + name),
         buf.dr,
@@ -754,7 +754,7 @@
         const pct = Math.min(100, (tx * 8 / bw) * 100);
         if (bar) {
           bar.style.width = pct.toFixed(1) + '%';
-          bar.style.background = pct >= 92 ? 'var(--amber)' : pct >= 75 ? 'var(--blue)' : 'var(--green)';
+          bar.style.background = pct >= 92 ? 'var(--amber)' : pct >= 75 ? 'var(--accent)' : 'var(--green)';
         }
         // parseBandwidth already returns bits/s; fmtBits expects bytes/s.
         sub.textContent = pct.toFixed(0) + '% of shaped ' + fmtBits(bw / 8);
@@ -1066,7 +1066,7 @@
       document.querySelectorAll('#modal-ranges .range-btn').forEach(b => {
         const active = b.dataset.range === modalRange;
         b.className = 'range-btn px-2.5 py-1 rounded-md font-semibold ' + (active
-          ? 'bg-[var(--blue)] text-[var(--accent-text)]'
+          ? 'bg-[var(--accent)] text-[var(--accent-text)]'
           : 'text-[var(--muted)] hover:text-white');
       });
     }
@@ -1178,9 +1178,9 @@
       FIELD_GROUPS.forEach(([groupLabel, fields]) => {
         fields.forEach(([, label, fmt], fi) => {
           const isFirst   = fi === 0;
-          const topBorder = isFirst ? 'border-t-2 border-t-[var(--blue)]' : '';
+          const topBorder = isFirst ? 'border-t-2 border-t-[var(--accent)]' : '';
           const groupTag  = isFirst
-            ? `<span class="block text-[11.5px] text-[var(--blue)] leading-tight mb-0.5 font-semibold">${h(groupLabel)}</span>`
+            ? `<span class="block text-[11.5px] text-[var(--accent)] leading-tight mb-0.5 font-semibold">${h(groupLabel)}</span>`
             : '';
 
           const valueCells = tiers
@@ -1209,7 +1209,7 @@
             <thead>
               <tr>
                 <th class="sticky-col px-3 py-1.5 border border-[var(--line)] bg-[var(--head)]
-                            text-[var(--blue)] font-semibold text-left whitespace-nowrap w-28">Field</th>
+                            text-[var(--accent)] font-semibold text-left whitespace-nowrap w-28">Field</th>
                 ${tierHeaders}
               </tr>
             </thead>
@@ -1328,7 +1328,7 @@
           // ── Interface header ──────────────────────────────────────────
           const head = document.createElement('div');
           const dir    = cs.direction === 'ingress' ? 'DOWNLOAD' : 'UPLOAD';
-          const dirCls = cs.direction === 'ingress' ? 'text-[var(--blue)]' : 'text-[var(--green)]';
+          const dirCls = cs.direction === 'ingress' ? 'text-[var(--accent)]' : 'text-[var(--green)]';
           head.className = 'px-5 pt-4 pb-1 flex flex-wrap items-baseline gap-x-3 gap-y-1';
           head.innerHTML =
             `<span class="font-bold text-lg">${h(cs.interface)}</span>` +
@@ -1469,7 +1469,7 @@
       else if (activeTab === 'diag') { loadConnHealth(); loadIncidents(); loadDiagWanChart(); loadLatencyQuality(); }
       else if (activeTab === 'system') { loadSystemHistory(); }
       const lu = document.getElementById('last-updated');
-      if (lu) { lu.style.color = 'var(--blue)'; setTimeout(() => { lu.style.color = ''; }, 600); }
+      if (lu) { lu.style.color = 'var(--accent)'; setTimeout(() => { lu.style.color = ''; }, 600); }
     }
     document.getElementById('refresh-btn').addEventListener('click', refreshTab);
 
@@ -1480,7 +1480,7 @@
     let clPlots      = [];  // uPlot instances in the clients tab
 
     const CL_COLORS = [cv('--muted'), cv('--green'), cv('--amber'), cv('--red'),
-                       cv('--amber'), cv('--blue'), '#E0A3C4', '#8FA3BF'];
+                       cv('--amber'), cv('--accent'), '#E0A3C4', '#8FA3BF'];
 
     /** "3 min ago" style age from a unix timestamp. */
     function fmtAge(unix) {
@@ -1577,7 +1577,7 @@
         (rows || []).forEach(s => { t = t.concat(s.t); v = v.concat(s.v); });
         if (t.length) {
           const pairs = t.map((x, i) => [x, v[i]]).sort((a, b) => a[0] - b[0]);
-          drawSparkline(document.getElementById('ov-wifi-spark'), pairs.map(p => p[1]), 'var(--blue)');
+          drawSparkline(document.getElementById('ov-wifi-spark'), pairs.map(p => p[1]), 'var(--accent)');
         }
       } catch (_) {}
     }
@@ -1627,7 +1627,7 @@
       });
       const wired = online.filter(c => !isWiFiRow(c));
       const sec = [];
-      if (wifi.length) sec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true, icon: ICON.wifi, color: 'var(--blue)' });
+      if (wifi.length) sec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true, icon: ICON.wifi, color: 'var(--accent)' });
       if (wired.length) sec.push({ label: 'Wired — ' + wired.length, list: wired, wifi: false, icon: ICON.wired, color: 'var(--muted)' });
       if (offline.length) sec.push({ label: 'Offline — ' + offline.length, list: offline, wifi: false, icon: ICON.offline, color: 'var(--faint)' });
 
@@ -1706,7 +1706,7 @@
       document.querySelectorAll(sel).forEach(b => {
         const on = b.dataset[attr] === activeRange;
         b.className = b.className.replace(/ ?font-semibold/, '') + (on ? ' font-semibold' : '');
-        b.style.background = on ? 'var(--blue)' : '';
+        b.style.background = on ? 'var(--accent)' : '';
         b.style.color = on ? 'var(--accent-text)' : '';
       });
     }
@@ -1794,7 +1794,7 @@
             '<div class="text-[12.5px] text-[var(--muted)] mt-0.5">' + (sub || '&nbsp;') + '</div>' +
           '</div>';
         strip.innerHTML =
-          mini('Peak download &middot; 24h', sysData.peakdown.toFixed(0) + ' Mbit/s', 'busiest 5-minute window' + pct, cv('--blue')) +
+          mini('Peak download &middot; 24h', sysData.peakdown.toFixed(0) + ' Mbit/s', 'busiest 5-minute window' + pct, cv('--accent')) +
           mini('Peak upload &middot; 24h', sysData.peakup.toFixed(0) + ' Mbit/s', sysData.p95up.toFixed(0) + ' Mbit/s typical busy (p95)', cv('--green')) +
           mini('Typical busy rate &middot; p95', sysData.p95down.toFixed(0) + ' Mbit/s', 'download, exceeded 5% of the time', cv('--muted')) +
           mini('Traffic &middot; last 24h', sysData.totaldown.toFixed(1) + ' GB', sysData.totalup.toFixed(1) + ' GB uploaded', cv('--amber'));
@@ -1816,7 +1816,7 @@
       };
       one('CPU temperature (°C)', sysData.temp, cv('--amber'), v => v.toFixed(1) + ' °C');
       if (sysData.wanrx) sysPlots.push({ u: makeChart(cd, W, H, sysData.t, [
-          { label: 'Download (Mbit/s)', data: sysData.wanrx, stroke: cv('--blue'), fill: 'rgba(56,189,248,0.10)' },
+          { label: 'Download (Mbit/s)', data: sysData.wanrx, stroke: cv('--accent'), fill: 'rgba(45,212,191,0.10)' },
           { label: 'Upload (Mbit/s)', data: sysData.wantx, stroke: cv('--green'), fill: 'rgba(74,222,128,0.10)' },
         ], 'WAN traffic — download vs upload (Mbit/s)', v => v.toFixed(0), 'sys-x') });
       if (sysData.bloatdn) sysPlots.push({ u: makeChart(cd, W, H, sysData.t, [
@@ -1827,7 +1827,7 @@
       one('System load (1 min)', sysData.load, cv('--muted'), v => v.toFixed(2));
       one('Memory available (%)', sysData.mem, cv('--green'), v => v.toFixed(0) + ' %', 'rgba(74,222,128,0.10)');
       one('Open connections', sysData.conns, cv('--amber'), v => fmtNum(v));
-      one('Internet response time (ms)', sysData.wan, cv('--blue'), v => v.toFixed(2) + ' ms');
+      one('Internet response time (ms)', sysData.wan, cv('--accent'), v => v.toFixed(2) + ' ms');
       if (sysData.wanerrs) one('WAN link errors (per min)', sysData.wanerrs, cv('--red'), v => v.toFixed(2));
     }
 
@@ -1905,7 +1905,7 @@
       };
       plot([{ label: 'download', data: d.rx, stroke: cv('--green'), fill: 'rgba(74,222,128,0.10)' }],
         'Download rate', v => fmtBits(v));
-      plot([{ label: 'upload', data: d.tx, stroke: cv('--blue') }],
+      plot([{ label: 'upload', data: d.tx, stroke: cv('--accent') }],
         'Upload rate', v => fmtBits(v));
       plot([{ label: 'connections', data: d.conns, stroke: cv('--amber') }],
         'Active connections', v => fmtNum(v));
@@ -2365,7 +2365,7 @@
       const upl = ovWanData && ovWanData.wantx ? ovWanData.wantx.slice(-36) : null;
       if (dn && dn.length > 1) {
         ovSparkDual(document.getElementById('ov-spark'), dn, upl,
-          css.getPropertyValue('--blue').trim(), css.getPropertyValue('--green').trim());
+          css.getPropertyValue('--accent').trim(), css.getPropertyValue('--green').trim());
       }
 
       // Footer line from health checks.
@@ -2391,9 +2391,9 @@
         const load = last(ovWanData.load) ?? 0;
         document.getElementById('ov-gauges').innerHTML =
           ovGauge('CPU', null, last(ovWanData.cpu).toFixed(0) + '%', last(ovWanData.cpu) / 100, 'var(--red)') +
-          ovGauge('RAM', null, (100 - mem).toFixed(0) + '%', (100 - mem) / 100, 'var(--blue)') +
+          ovGauge('RAM', null, (100 - mem).toFixed(0) + '%', (100 - mem) / 100, 'var(--accent)') +
           ovGauge('TEMP', null, temp.toFixed(0) + '\u00b0C', temp / 100, temp > 70 ? 'var(--red)' : temp > 60 ? 'var(--amber)' : 'var(--green)') +
-          ovGauge('LOAD', null, load.toFixed(2), Math.min(1, load / 4), 'var(--blue)');
+          ovGauge('LOAD', null, load.toFixed(2), Math.min(1, load / 4), 'var(--accent)');
       }
     }
 
@@ -2417,7 +2417,7 @@
                ' title="Open full connection history">' +
           '<span class="text-[13.5px] flex-1 truncate">' + h(name) + '</span>' +
           '<div class="w-24 sm:w-40 h-1.5 rounded-full bg-[var(--panel2)] overflow-hidden">' +
-            '<div class="h-full rounded-full" style="width:' + (total / max * 100).toFixed(0) + '%;background:var(--blue)"></div>' +
+            '<div class="h-full rounded-full" style="width:' + (total / max * 100).toFixed(0) + '%;background:var(--accent)"></div>' +
           '</div>' +
           '<span class="num text-[13.5px] font-semibold w-16 text-right">' + ovBytes(total) + '</span>' +
         '</div>';
@@ -2499,7 +2499,7 @@
         const css = getComputedStyle(document.documentElement);
         ovPlots = [{
           u: makeChart(cd, W, 130, wd.t, [
-            { label: 'Download (Mbit/s)', data: wd.wanrx, stroke: css.getPropertyValue('--blue').trim(), fill: 'rgba(56,189,248,0.10)' },
+            { label: 'Download (Mbit/s)', data: wd.wanrx, stroke: css.getPropertyValue('--accent').trim(), fill: 'rgba(45,212,191,0.10)' },
             { label: 'Upload (Mbit/s)', data: wd.wantx, stroke: css.getPropertyValue('--green').trim(), fill: 'rgba(74,222,128,0.10)' },
           ], 'Download vs upload (Mbit/s)', v => v.toFixed(0), 'ov-x')
         }];
