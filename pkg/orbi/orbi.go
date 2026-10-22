@@ -86,12 +86,21 @@ const (
 	sessionHeader  = "A7D88AE69687E58D9A00" // fixed magic session id, as the Netgear app sends
 )
 
+// xmlEscaper escapes the five predefined XML entities for interpolation
+// into the SOAP login envelope.
+var xmlEscaper = strings.NewReplacer(
+	"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;",
+)
+
 func loginXML(pass string) string {
+	// Password is interpolated into XML — escape it so special characters
+	// (<, &, quotes) can't break the envelope.
+	escaped := xmlEscaper.Replace(pass)
 	return `<?xml version="1.0" encoding="utf-8" standalone="no"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
 <SOAP-ENV:Header><SessionID>` + sessionHeader + `</SessionID></SOAP-ENV:Header>
 <SOAP-ENV:Body><M1:SOAPLogin xmlns:M1="urn:NETGEAR-ROUTER:service:DeviceConfig:1">
-<Username>admin</Username><Password>` + pass + `</Password>
+<Username>admin</Username><Password>` + escaped + `</Password>
 </M1:SOAPLogin></SOAP-ENV:Body></SOAP-ENV:Envelope>`
 }
 
