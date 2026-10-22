@@ -18,11 +18,14 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/galpt/cake-stats/pkg/vm"
 )
 
 // Device is one entry of the Orbi's attached-device list.
@@ -115,6 +118,7 @@ type Poller struct {
 	url     string // e.g. http://192.168.1.100 (no trailing slash)
 	pass    string
 	cookie  string // jwt_local cookie from the last successful SOAP login
+	vmc     *vm.Client
 	client  *http.Client
 	state   State
 	seen    map[string]string // mac -> contype from the previous successful poll
@@ -140,6 +144,9 @@ func New(url, user, pass string, onEvent func(kind, sev, msg string)) *Poller {
 
 // SetEventHook registers the callback fired on Wi-Fi client join/leave.
 func (p *Poller) SetEventHook(fn func(kind, sev, msg string)) { p.onEvent = fn }
+
+// SetVMClient enables pushing Wi-Fi gauges into VictoriaMetrics.
+func (p *Poller) SetVMClient(c *vm.Client) { p.vmc = c }
 
 // Enabled reports whether the poller has a target to poll.
 func (p *Poller) Enabled() bool { return p != nil && p.url != "" }
@@ -206,6 +213,49 @@ func (p *Poller) refresh() {
 	st.Devices = devs
 	p.commit(st)
 	p.diffEvents(devs)
+	p.pushVM(devs)
+}
+
+// pushVM imports Wi-Fi gauges into VictoriaMetrics: client counts per
+// band, and per-client signal strength so client drill-downs can chart
+// their own radio history. Called from the poll goroutine only.
+func (p *Poller) pushVM(devs []Device) {
+	if p.vmc == nil {
+		return
+	}
+	var b24, b5, wired int
+	var b strings.Builder
+	ts := strconv.FormatInt(time.Now().UnixMilli(), 10)
+	for _, d := range devs {
+		switch d.ConnType {
+		case "2.4G":
+			b24++
+		case "5G":
+			b5++
+		default:
+			wired++
+			continue // wired clients have no radio story
+		}
+		name := sanitizeLabel(d.Name)
+		mac := sanitizeLabel(d.MAC)
+		b.WriteString("orbi_client_signal{mac=\"" + mac + "\",name=\"" + name + "\",band=\"" + d.ConnType + "\"} " +
+			strconv.Itoa(d.Signal) + " " + ts + "\n")
+	}
+	b.WriteString("orbi_wifi_clients{band=\"2.4G\"} " + strconv.Itoa(b24) + " " + ts + "\n")
+	b.WriteString("orbi_wifi_clients{band=\"5G\"} " + strconv.Itoa(b5) + " " + ts + "\n")
+	b.WriteString("orbi_wired_clients " + strconv.Itoa(wired) + " " + ts + "\n")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := p.vmc.Import(ctx, b.String()); err != nil {
+		log.Printf("[orbi] VM import failed: %v", err)
+	}
+}
+
+func sanitizeLabel(v string) string {
+	v = strings.ReplaceAll(v, "\\", "\\\\")
+	v = strings.ReplaceAll(v, "\"", "\\\"")
+	v = strings.ReplaceAll(v, "\n", " ")
+	return v
 }
 
 // soapLogin performs a SOAPLogin and stores the session cookie.

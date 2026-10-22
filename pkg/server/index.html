@@ -192,7 +192,7 @@
           <div id="ov-gauges" class="mt-3 space-y-2.5"></div>
         </div>
 
-        <!-- Network card: clients online + top talkers -->
+        <!-- Network card: clients online + top talkers + Wi-Fi state -->
         <div id="ov-network" class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5">
           <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">Network</div>
           <div class="flex items-baseline gap-3 mt-1">
@@ -200,6 +200,10 @@
             <span class="text-sm text-[var(--muted)]">clients online</span>
           </div>
           <div id="ov-top3" class="mt-3 space-y-2"></div>
+          <div class="mt-3 pt-3 border-t border-[var(--line)]/60 cursor-pointer" id="ov-wifi-box" title="Open the Clients tab">
+            <div id="ov-wifi-line" class="text-[12px] text-[var(--muted)]">Wi-Fi — waiting for AP data…</div>
+            <svg id="ov-wifi-spark" width="100%" height="26" viewBox="0 0 100 26" preserveAspectRatio="none" class="overflow-visible mt-1"></svg>
+          </div>
         </div>
       </div>
 
@@ -1499,6 +1503,44 @@
           ? ((d.model || 'Orbi AP') + ' · ' + (d.devices || []).length + ' attached' + (d.busy ? ' · device list unavailable' : ''))
           : 'Orbi AP not responding';
         if (document.querySelector('.tab-btn[data-tab="clients"].tab-active')) renderClientsTable();
+        renderOverviewWifi(d);
+        loadWifiSpark();
+      } catch (_) {}
+    }
+
+    /** Overview Wi-Fi strip: counts per band, weakest client, slowest link. */
+    function renderOverviewWifi(d) {
+      const el = document.getElementById('ov-wifi-line');
+      if (!el) return;
+      if (!d.reachable) { el.textContent = 'Wi-Fi — AP not responding'; return; }
+      const devs = d.devices || [];
+      const wifi = devs.filter(x => x.contype === '2.4G' || x.contype === '5G');
+      const n24 = wifi.filter(x => x.contype === '2.4G').length;
+      const n5 = wifi.length - n24;
+      let weakest = null, slowest = null;
+      for (const x of wifi) {
+        if (!weakest || x.signal < weakest.signal) weakest = x;
+        if (!slowest || (x.linkspeed_mbps || 0) < (slowest.linkspeed_mbps || 0)) slowest = x;
+      }
+      const nm = x => h((x.name && x.name.toLowerCase() !== 'unknown' ? x.name : x.devtype) || x.mac);
+      const wCol = !weakest ? '' : (weakest.signal >= 70 ? 'var(--green)' : weakest.signal >= 50 ? 'var(--amber)' : 'var(--red)');
+      el.innerHTML =
+        '<span class="font-semibold text-[var(--text)]">' + wifi.length + ' on Wi-Fi</span>' +
+        '<span class="text-[var(--muted)]"> · ' + n5 + '× 5 GHz' + (n24 ? ' · ' + n24 + '× 2.4 GHz' : '') + '</span>' +
+        (weakest ? '<span class="block mt-0.5 text-[var(--muted)]">weakest: <span style="color:' + wCol + '">' + nm(weakest) + ' ' + weakest.signal + '%</span>' +
+          (slowest && slowest.linkspeed_mbps ? ' · slowest link: ' + nm(slowest) + ' ' + slowest.linkspeed_mbps + ' Mbit/s' : '') + '</span>' : '');
+    }
+
+    /** 24h Wi-Fi client-count sparkline on the Overview card. */
+    async function loadWifiSpark() {
+      try {
+        const rows = await fetch(appURL('/api/history/orbi?range=24h')).then(r => r.ok ? r.json() : []);
+        let t = [], v = [];
+        (rows || []).forEach(s => { t = t.concat(s.t); v = v.concat(s.v); });
+        if (t.length) {
+          const pairs = t.map((x, i) => [x, v[i]]).sort((a, b) => a[0] - b[0]);
+          drawSparkline(document.getElementById('ov-wifi-spark'), pairs.map(p => p[1]), 'var(--blue)');
+        }
       } catch (_) {}
     }
     function obBand(ct) {
@@ -1521,16 +1563,49 @@
         return;
       }
 
-      tbody.innerHTML = rows.map(c => {
+      // Group rows: Wi-Fi first (weakest signal on top — problems surface),
+      // then wired, then offline. Each group gets a small header row.
+      const isWiFiRow = c => {
+        const ob = orbiByMac[(c.mac || '').toUpperCase()];
+        return !!(ob && (ob.contype === '2.4G' || ob.contype === '5G'));
+      };
+      const groupHdr = label => '<tr class="pointer-events-none"><td colspan="7" class="px-4 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">' + label + '</td></tr>';
+      const online = rows.filter(c => c.online);
+      const offline = rows.filter(c => !c.online);
+      const wifi = online.filter(isWiFiRow).sort((a, b) => {
+        const oa = orbiByMac[(a.mac || '').toUpperCase()], obb = orbiByMac[(b.mac || '').toUpperCase()];
+        return (oa.signal || 0) - (obb.signal || 0);
+      });
+      const wired = online.filter(c => !isWiFiRow(c));
+      const sec = [];
+      if (wifi.length) sec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true });
+      if (wired.length) sec.push({ label: 'Wired — ' + wired.length, list: wired, wifi: false });
+      if (offline.length) sec.push({ label: 'Offline — ' + offline.length, list: offline, wifi: false });
+
+      tbody.innerHTML = sec.map(s => groupHdr(s.label) + s.list.map(c => {
         const dot = c.online
           ? '<span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[var(--green)]"></span>online</span>'
           : '<span class="inline-flex items-center gap-1.5 text-[var(--faint)]"><span class="w-2 h-2 rounded-full bg-[var(--faint)]"></span>' +
             'offline · ' + fmtAge(c.last_seen) + '</span>';
         const active = c.rx_rate + c.tx_rate > 1024; // > 1 kB/s
         const ob = orbiByMac[(c.mac || '').toUpperCase()];
-        const obSub = ob
-          ? 'Orbi · ' + obBand(ob.contype) + (ob.contype !== 'wired' && ob.signal ? ' · ' + ob.signal + '%' + (ob.linkspeed_mbps ? ' · ' + ob.linkspeed_mbps + ' Mbit/s' : '') : '')
-          : null;
+        let sigHTML = '';
+        let obSub = null;
+        if (ob && (ob.contype === '2.4G' || ob.contype === '5G')) {
+          const sig = ob.signal || 0;
+          const lvl = sig >= 70 ? 4 : sig >= 50 ? 3 : sig >= 30 ? 2 : 1;
+          const col = sig >= 70 ? 'var(--green)' : sig >= 50 ? 'var(--amber)' : 'var(--red)';
+          const hs = [4, 7, 10, 13];
+          let bars = '';
+          for (let i = 0; i < 4; i++) {
+            bars += '<span style="display:inline-block;width:3px;height:' + hs[i] + 'px;border-radius:1px;background:' + (i < lvl ? col : 'var(--line)') + '"></span>';
+          }
+          sigHTML = '<span class="inline-flex items-end gap-[2px] mr-1 align-middle">' + bars + '</span>';
+          obSub = 'Orbi · ' + obBand(ob.contype) + ' · ' + sig + '%' +
+            (ob.linkspeed_mbps ? ' · ' + ob.linkspeed_mbps + ' Mbit/s' : '');
+        } else if (ob && ob.contype !== '-') {
+          obSub = 'Orbi · wired';
+        }
         const sub = [c.ip, c.vendor, obSub].filter(Boolean).join(' · ');
         return '<tr data-mac="' + h(c.mac) + '" data-name="' + h(c.name || c.mac) + '"' +
           ' data-ip="' + h(c.ip) + '" data-vendor="' + h(c.vendor || '') + '"' +
@@ -1538,7 +1613,7 @@
           ' class="border-b border-[var(--line)]/60 hover:bg-[var(--panel2)]/70">' +
           '<td class="px-4 py-2.5">' +
             '<span class="font-semibold text-[var(--text)]">' + h(c.name || c.mac) + '</span>' +
-            '<span class="num text-[11px] text-[var(--faint)] block">' + h(sub) + '</span>' +
+            '<span class="num text-[11px] text-[var(--faint)] block">' + (s.wifi ? sigHTML : '') + h(sub) + '</span>' +
           '</td>' +
           '<td class="px-3 py-2.5 text-[var(--muted)]">' + dot + '</td>' +
           '<td class="px-3 py-2.5 text-right num ' + (c.rx_rate > 0 ? 'text-[var(--text)]' : 'text-[var(--faint)]') + '">' + fmtBits(c.rx_rate) + '</td>' +
@@ -1547,7 +1622,7 @@
           '<td class="px-3 py-2.5 text-right num text-[var(--muted)]">' + fmtBytes(c.tx_total) + '</td>' +
           '<td class="px-3 py-2.5 text-right num ' + (active ? 'text-[var(--amber)]' : 'text-[var(--muted)]') + '">' + fmtNum(c.conns) + '</td>' +
         '</tr>';
-      }).join('');
+      }).join('')).join('');
     }
 
     document.getElementById('cl-filter').addEventListener('input', renderClientsTable);
@@ -1784,6 +1859,25 @@
         'Upload rate', v => fmtBits(v));
       plot([{ label: 'connections', data: d.conns, stroke: cv('--amber') }],
         'Active connections', v => fmtNum(v));
+
+      // Wi-Fi signal history — only exists for clients that connect over
+      // the Orbi's radio; silently skipped for wired devices.
+      try {
+        const sr = await fetch(appURL('/api/history/orbi?mac=' +
+          encodeURIComponent(clModal.mac) + '&range=' + encodeURIComponent(clModal.range)));
+        if (sr.ok) {
+          const bands = await sr.json();
+          const t = [], v = [];
+          (bands || []).forEach(s => { t.push(...s.t); v.push(...s.v); });
+          if (t.length >= 2 && clModal.mac) {
+            const order = t.map((x, i) => [x, v[i]]).sort((a, b) => a[0] - b[0]);
+            const st = order.map(p => p[0]), sv = order.map(p => p[1]);
+            clModal.plots.push({ u: makeChart(cd, W, H, st,
+              [{ label: 'signal', data: sv, stroke: cv('--green') }],
+              'Wi-Fi signal (Orbi)', v2 => v2.toFixed(0) + '%', 'clm-x') });
+          }
+        }
+      } catch (_) {}
     }
 
     // ── System tab: tunnel, connection table, latency quality, incidents ──
@@ -2042,20 +2136,58 @@
         '</div>';
       }).join('');
 
-      const pillHTML = fine.map(c => {
-        const col = stateColor(c.state);
-        // Pill values read neutral — the dot carries the state color, so a
-        // wall of green numbers doesn't vibrate against the background.
-        return '<span class="inline-flex items-center gap-1.5 rounded-full border bg-[var(--panel)] px-3 py-1 text-[10px]"' +
-               ' title="' + h(c.detail) + '" style="border-color:var(--line)">' +
-          '<span style="color:' + col + '" class="text-[8px]">&#9679;</span>' +
-          '<span class="uppercase tracking-wider text-[var(--muted)]">' + h(c.name) + '</span>' +
-          '<span class="num font-semibold">' + h(c.value) + '</span>' +
-        '</span>';
-      }).join('');
+      // Healthy checks collapse into a handful of category pills — each
+      // answers one question ("is my internet fine?"), shows one headline
+      // number, and the hover lists its individual checks. Fifteen equal
+      // pills forced a scan; five groups keep the row calm but auditable.
+      // Any check outside a group still renders as its own pill.
+      const GROUPS = [
+        { label: 'Internet', tab: 'diag', lead: 'ISP session',
+          members: ['ISP session', 'Internet line', 'Internet response time', 'Exit path (WARP)'] },
+        { label: 'Latency & SQM', tab: 'sqm', lead: 'Latency under load',
+          members: ['Latency under load', 'Traffic queue', 'Packet drops', 'Traffic shaping'] },
+        { label: 'Router', tab: 'system', lead: 'Router CPU',
+          members: ['Router CPU', 'Temperature & memory', 'Storage & uptime', 'Connection table', 'Clock sync'] },
+        { label: 'DNS & security', tab: 'diag', lead: 'DNS & ad-blocking',
+          members: ['DNS & ad-blocking', 'Unsolicited inbound'] },
+        { label: 'LAN & Wi-Fi', tab: 'clients', lead: 'Device tracking',
+          members: ['WiFi AP', 'Device tracking'] },
+      ];
+      const byName = {};
+      fine.forEach(c => { byName[c.name] = c; });
+      const grouped = new Set();
+      const groupPills = GROUPS.map(g => {
+        const members = g.members.map(n => byName[n]).filter(Boolean);
+        if (members.length === 0) return '';
+        members.forEach(c => grouped.add(c.name));
+        const lead = g.members.map(n => byName[n]).find(c => c && c.value && c.value !== '—') || members[0];
+        // Lead value speaks for the group; the dot is its (always ok here) state.
+        const tip = members.map(c => c.name + ': ' + c.value).join('   ·   ');
+        return '<button type="button" data-tab-jump="' + g.tab + '"' +
+          ' class="inline-flex items-center gap-2 rounded-full border bg-[var(--panel)] px-3.5 py-1.5 text-[11px] cursor-pointer hover:bg-[var(--panel2)] transition-colors"' +
+          ' title="' + h(tip) + '" style="border-color:var(--line)">' +
+          '<span style="color:' + stateColor('ok') + '" class="text-[8px]">&#9679;</span>' +
+          '<span class="uppercase tracking-wider text-[var(--muted)]">' + h(g.label) + '</span>' +
+          '<span class="num font-semibold text-[var(--text)]">' + h(lead.value) + '</span>' +
+        '</button>';
+      });
+      const rest = fine.filter(c => !grouped.has(c.name));
+      const groupRow =
+        '<div class="flex flex-wrap gap-2 sm:col-span-full mt-1">' + groupPills.join('') +
+          rest.map(c => pillHTML_one(c)).join('') + '</div>';
 
-      healthChipsEl.innerHTML = cardHTML +
-        (fine.length ? '<div class="flex flex-wrap gap-1.5 sm:col-span-full mt-1">' + pillHTML + '</div>' : '');
+      healthChipsEl.innerHTML = cardHTML + (fine.length ? groupRow : '');
+    }
+
+    /** Loose pill for healthy checks that belong to no category group. */
+    function pillHTML_one(c) {
+      const col = stateColor(c.state);
+      return '<span class="inline-flex items-center gap-1.5 rounded-full border bg-[var(--panel)] px-3 py-1.5 text-[11px]"' +
+             ' title="' + h(c.detail) + '" style="border-color:var(--line)">' +
+        '<span style="color:' + col + '" class="text-[8px]">&#9679;</span>' +
+        '<span class="uppercase tracking-wider text-[var(--muted)]">' + h(c.name) + '</span>' +
+        '<span class="num font-semibold">' + h(c.value) + '</span>' +
+      '</span>';
     }
 
     async function pollHealth() {
@@ -2282,6 +2414,7 @@
           jobs.push(fetch(appURL('/api/history/system?range=24h')).then(r => r.json()).then(d => { ovWanData = d; ovWanAt = Date.now(); }));
         }
         const [cl, evs] = await Promise.all(jobs);
+        if (Date.now() - orbiAt > 60000) loadOrbi(); // Wi-Fi strip on this card
         document.getElementById('ov-clients').textContent = Array.isArray(cl) ? cl.filter(c => c.online).length : '–';
         renderTopClients(Array.isArray(cl) ? cl : []);
         renderEvents(Array.isArray(evs) ? evs : []);
@@ -2323,7 +2456,13 @@
 
     // Drill-downs from the Overview cards.
     document.getElementById('ov-internet').addEventListener('click', () => setTab('diag'));
+    document.getElementById('ov-wifi-box').addEventListener('click', () => setTab('clients'));
     document.getElementById('ov-gateway').addEventListener('click', () => setTab('system'));
+    // Health group pills jump to the tab that owns that category.
+    document.addEventListener('click', e => {
+      const gp = e.target.closest('[data-tab-jump]');
+      if (gp) setTab(gp.dataset.tabJump);
+    });
 
     // ── Boot ──────────────────────────────────────────────────────────────
     seedHistory(); // seed sparklines from server ring buffer before first SSE

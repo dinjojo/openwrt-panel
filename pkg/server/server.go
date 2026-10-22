@@ -89,6 +89,7 @@ func New(addr string, interval time.Duration, histCap int, vmURL, version string
 	app.Get("/api/history/vm", s.handleAPIHistoryVM)
 	app.Get("/api/history/system", s.handleAPIHistorySystem)
 	app.Get("/api/history/clients", s.handleAPIHistoryClients)
+	app.Get("/api/history/orbi", s.handleAPIHistoryOrbi)
 	app.Get("/api/history/client", s.handleAPIClientHistory)
 	app.Get("/api/clients", s.handleAPIClients)
 	app.Get("/api/health", s.handleAPIHealth)
@@ -850,6 +851,7 @@ func (s *Server) orbiRun(ctx context.Context) {
 	if !s.orbi.Enabled() {
 		return
 	}
+	s.orbi.SetVMClient(s.vmc)
 	s.orbi.Run(ctx)
 }
 
@@ -860,6 +862,68 @@ func (s *Server) handleAPIOrbi(c fiber.Ctx) error {
 	c.Set("Content-Type", "application/json; charset=utf-8")
 	b, _ := json.Marshal(st)
 	return c.Send(b)
+}
+
+// handleAPIHistoryOrbi serves Wi-Fi history from VictoriaMetrics: with no
+// mac param, the per-band client-count series for the Overview sparkline;
+// with mac=…, that client's signal-strength history for the drill-down.
+func (s *Server) handleAPIHistoryOrbi(c fiber.Ctx) error {
+	if s.vmc == nil {
+		return c.Status(503).SendString(`{"error":"victoriametrics not configured"}`)
+	}
+	rng := c.Query("range", "24h")
+	spec, ok := vmRanges[rng]
+	if !ok {
+		return c.Status(400).SendString(`{"error":"range must be one of 1h,6h,24h,7d,30d"}`)
+	}
+	end := time.Now().Unix()
+	var hours int64
+	switch rng {
+	case "1h":
+		hours = 1
+	case "6h":
+		hours = 6
+	case "24h":
+		hours = 24
+	case "7d":
+		hours = 7 * 24
+	case "30d":
+		hours = 30 * 24
+	}
+	start := end - hours*3600
+
+	query := `sum by (band) (orbi_wifi_clients)`
+	if mac := c.Query("mac"); mac != "" {
+		// mac comes from our own UI (upper-case hex + colon), but escape
+		// defensively — it lands inside a PromQL string literal.
+		safe := strings.Map(func(r rune) rune {
+			if (r >= '0' && r <= '9') || (r >= 'A' && r <= 'F') || r == ':' || r == '-' {
+				return r
+			}
+			return -1
+		}, strings.ToUpper(mac))
+		query = `orbi_client_signal{mac="` + safe + `"}`
+	}
+
+	series, err := s.vmc.QueryRange(c.Context(), query, start, end, spec.step)
+	if err != nil {
+		return c.Status(502).SendString(`{"error":"` + err.Error() + `"}`)
+	}
+	type bandSeries struct {
+		Band string    `json:"band"`
+		T    []float64 `json:"t"`
+		V    []float64 `json:"v"`
+	}
+	out := make([]bandSeries, 0, len(series))
+	for _, srs := range series {
+		bs := bandSeries{Band: srs.Labels["band"], T: make([]float64, 0, len(srs.TS)), V: make([]float64, 0, len(srs.Val))}
+		for i, ts := range srs.TS {
+			bs.T = append(bs.T, float64(ts))
+			bs.V = append(bs.V, srs.Val[i])
+		}
+		out = append(out, bs)
+	}
+	return c.JSON(out)
 }
 
 func (s *Server) handleAPIEvents(c fiber.Ctx) error {
