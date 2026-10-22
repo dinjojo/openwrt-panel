@@ -1618,21 +1618,24 @@
       document.getElementById('ov-wifi-aps').innerHTML = apRows ||
         '<div class="text-[13.5px] text-[var(--muted)]">No wireless clients right now.</div>';
 
-      // Per-band: load spread and radio conditions on each band.
-      const bandRow = (label, list) => {
+      // Per-band: load spread and radio conditions on each band. Channel
+      // and mode come from the WLANConfiguration SOAP calls when available.
+      const radio = b => (d.radios || []).find(r => r.band === b);
+      const bandRow = (label, list, rad) => {
         if (!list.length) return '';
         const weakest = Math.min(...list.map(x => x.signal));
         const avg = Math.round(list.reduce((a, x) => a + (x.signal || 0), 0) / list.length);
+        const ch = rad && rad.channel ? ' · ch ' + rad.channel + (rad.mode ? ' · ' + rad.mode : '') : '';
         return '<div class="flex items-center gap-3 rounded-lg px-3 py-2" style="background:var(--panel2)">' +
           '<span class="shrink-0 text-[11.5px] font-bold uppercase tracking-widest text-[var(--muted)] w-20 text-right">' + label + '</span>' +
           '<div class="min-w-0 flex-1 text-[13.5px] text-[var(--text)]">' + list.length + ' client' + (list.length === 1 ? '' : 's') +
-            ' <span class="text-[var(--muted)]">· avg signal ' + avg + '%</span></div>' +
+            ' <span class="text-[var(--muted)]">· avg signal ' + avg + '%' + ch + '</span></div>' +
           '<div class="num text-[13.5px] font-semibold" style="color:' + sigCol(weakest) + '" title="weakest client signal">' + weakest + '%</div>' +
         '</div>';
       };
       document.getElementById('ov-wifi-bands').innerHTML =
-        bandRow('5 GHz', wifi.filter(x => x.contype === '5G')) +
-        bandRow('2.4 GHz', wifi.filter(x => x.contype === '2.4G')) ||
+        bandRow('5 GHz', wifi.filter(x => x.contype === '5G'), radio('5G')) +
+        bandRow('2.4 GHz', wifi.filter(x => x.contype === '2.4G'), radio('2.4G')) ||
         '<div class="text-[13.5px] text-[var(--muted)]">No wireless clients right now.</div>';
 
       let weakest = null, slowest = null;

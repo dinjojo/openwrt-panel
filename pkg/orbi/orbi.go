@@ -44,15 +44,25 @@ type Device struct {
 	SSID      string  `json:"ssid"`              // SSID the client associated to
 }
 
+// RadioInfo is one band's radio state from the WLANConfiguration SOAP
+// service (GetInfo / Get5GInfo), confirmed working on RBR50 Voxel.
+type RadioInfo struct {
+	Band    string `json:"band"`    // "2.4G" or "5G"
+	Channel int    `json:"channel"` // current channel number
+	Mode    string `json:"mode"`    // radio's link tier, e.g. "866Mbps"
+	SSID    string `json:"ssid"`
+}
+
 // State is the latest Orbi snapshot.
 type State struct {
-	At        time.Time `json:"at"`
-	Reachable bool      `json:"reachable"`
-	Busy      bool      `json:"busy"` // true when the device list could not be fetched
-	Model     string    `json:"model"`
-	Firmware  string    `json:"firmware"`
-	APMode    bool      `json:"ap_mode"`
-	Devices   []Device  `json:"devices"`
+	At        time.Time   `json:"at"`
+	Reachable bool        `json:"reachable"`
+	Busy      bool        `json:"busy"` // true when the device list could not be fetched
+	Model     string      `json:"model"`
+	Firmware  string      `json:"firmware"`
+	APMode    bool        `json:"ap_mode"`
+	Devices   []Device    `json:"devices"`
+	Radios    []RadioInfo `json:"radios"` // empty when the radio query failed
 }
 
 // soapEnvelope is the GetAttachDevice2 response we parse.
@@ -86,6 +96,7 @@ const (
 	soapPath       = "/soap/server_sa/"
 	loginAction    = "urn:NETGEAR-ROUTER:service:DeviceConfig:1#SOAPLogin"
 	attachAction   = "urn:NETGEAR-ROUTER:service:DeviceInfo:1#GetAttachDevice2"
+	wlanService    = "urn:NETGEAR-ROUTER:service:WLANConfiguration:1"
 	sessionHeader  = "A7D88AE69687E58D9A00" // fixed magic session id, as the Netgear app sends
 )
 
@@ -211,15 +222,17 @@ func (p *Poller) refresh() {
 		return
 	}
 	st.Devices = devs
+	st.Radios = p.soapRadios()
 	p.commit(st)
 	p.diffEvents(devs)
-	p.pushVM(devs)
+	p.pushVM(devs, st.Radios)
 }
 
 // pushVM imports Wi-Fi gauges into VictoriaMetrics: client counts per
-// band, and per-client signal strength so client drill-downs can chart
-// their own radio history. Called from the poll goroutine only.
-func (p *Poller) pushVM(devs []Device) {
+// band, per-AP client counts, radio channels, and per-client signal
+// strength so client drill-downs can chart their own radio history.
+// Called from the poll goroutine only.
+func (p *Poller) pushVM(devs []Device, radios []RadioInfo) {
 	if p.vmc == nil {
 		return
 	}
@@ -251,6 +264,11 @@ func (p *Poller) pushVM(devs []Device) {
 	for apMac, n := range apCount {
 		label := sanitizeLabel(p.apNameFor(devs, apMac))
 		b.WriteString("orbi_ap_clients{ap=\"" + label + "\"} " + strconv.Itoa(n) + " " + ts + "\n")
+	}
+	for _, r := range radios {
+		if r.Channel > 0 {
+			b.WriteString("orbi_radio_channel{band=\"" + r.Band + "\"} " + strconv.Itoa(r.Channel) + " " + ts + "\n")
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -297,44 +315,108 @@ func (p *Poller) soapLogin() error {
 	return nil
 }
 
-// soapDevices fetches and parses the attached-device list, re-logging in
-// once if the session cookie was rejected or expired.
-func (p *Poller) soapDevices() ([]Device, error) {
+// soapPost runs one SOAP action against the Orbi, re-logging in once if
+// the session cookie was rejected or expired. Returns the raw XML body.
+func (p *Poller) soapPost(action, body string) (string, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		if p.cookie == "" {
 			if err := p.soapLogin(); err != nil {
-				return nil, err
+				return "", err
 			}
 		}
-		req, err := http.NewRequest("POST", p.url+soapPath, strings.NewReader(attachXML))
+		req, err := http.NewRequest("POST", p.url+soapPath, strings.NewReader(body))
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		req.Header.Set("SOAPAction", attachAction)
+		req.Header.Set("SOAPAction", action)
 		req.Header.Set("Cache-Control", "no-cache")
 		req.Header.Set("Content-Type", "multipart/form-data")
 		req.Header.Set("Cookie", p.cookie)
 		resp, err := p.client.Do(req)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		raw, _ := readAll(resp.Body)
 		resp.Body.Close()
-		body := string(raw)
+		page := string(raw)
 		// Session expired or invalid: the server answers 200 with
 		// <ResponseCode>401</ResponseCode> (or an auth redirect page).
 		if resp.StatusCode == http.StatusUnauthorized ||
-			strings.Contains(body, "<ResponseCode>401") ||
-			strings.Contains(body, "multi_login.html") {
+			strings.Contains(page, "<ResponseCode>401") ||
+			strings.Contains(page, "multi_login.html") {
 			p.cookie = ""
 			continue // re-login and retry once
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("orbi: GetAttachDevice2 -> %d", resp.StatusCode)
+			return "", fmt.Errorf("orbi: %s -> %d", action, resp.StatusCode)
 		}
-		return parseDevices(body)
+		return page, nil
 	}
-	return nil, fmt.Errorf("orbi: device list unavailable after re-login")
+	return "", fmt.Errorf("orbi: %s unavailable after re-login", action)
+}
+
+// soapDevices fetches the attached-device list.
+func (p *Poller) soapDevices() ([]Device, error) {
+	body, err := p.soapPost(attachAction, attachXML)
+	if err != nil {
+		return nil, err
+	}
+	return parseDevices(body)
+}
+
+// wlanEnvelope wraps one WLANConfiguration action call.
+func wlanEnvelope(action string) string {
+	return `<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" SOAP-ENV:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+<SOAP-ENV:Header><SessionID>` + sessionHeader + `</SessionID></SOAP-ENV:Header>
+<SOAP-ENV:Body><M1:` + action + ` xmlns:M1="` + wlanService + `"></M1:` + action + `></SOAP-ENV:Body></SOAP-ENV:Envelope>`
+}
+
+// soapRadios reads both bands' radio state. Best-effort: on any failure
+// the snapshot simply carries no radio info (the UI hides the channel).
+func (p *Poller) soapRadios() []RadioInfo {
+	var out []RadioInfo
+	for _, spec := range []struct{ action, band string }{
+		{"GetInfo", "2.4G"}, {"Get5GInfo", "5G"},
+	} {
+		raw, err := p.soapPost(wlanService+"#"+spec.action, wlanEnvelope(spec.action))
+		if err != nil {
+			log.Printf("[orbi] radio %s query failed: %v", spec.band, err)
+			continue
+		}
+		// Seek the action's response element inside the SOAP envelope
+		// (the document root is the Envelope, so plain Unmarshal would
+		// only ever see that element).
+		var fields struct {
+			Channel string `xml:"NewChannel"`
+			Mode    string `xml:"NewWirelessMode"`
+			SSID    string `xml:"NewSSID"`
+		}
+		found := false
+		dec := xml.NewDecoder(strings.NewReader(raw))
+		for {
+			tok, terr := dec.Token()
+			if terr != nil {
+				break
+			}
+			if se, ok := tok.(xml.StartElement); ok && se.Name.Local == spec.action+"Response" {
+				if derr := dec.DecodeElement(&fields, &se); derr == nil {
+					found = true
+				}
+				break
+			}
+		}
+		if !found || !strings.Contains(raw, "<ResponseCode>000") {
+			continue
+		}
+		out = append(out, RadioInfo{
+			Band:    spec.band,
+			Channel: atoiDefault(fields.Channel, 0),
+			Mode:    strings.TrimSpace(fields.Mode),
+			SSID:    strings.TrimSpace(fields.SSID),
+		})
+	}
+	return out
 }
 
 func (p *Poller) get(url string, hdr map[string]string) ([]byte, error) {

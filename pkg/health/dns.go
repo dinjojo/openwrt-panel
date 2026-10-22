@@ -78,6 +78,29 @@ func evalDNS(p *dnsProber) Check {
 		Detail: detail, NumState: numState(state)}
 }
 
+// humanUp renders an uptime in the largest sensible units — "5h 12m",
+// "4d 21h", "3mo 12d" — never raw hours past a day. Go's Duration string
+// prints "117h11m0s", which reads like a bug report, not a status line.
+func humanUp(d time.Duration) string {
+	s := int64(d / time.Second)
+	const min, hr, day = 60, 3600, 86400
+	const month, year = 30 * 86400, 365 * 86400
+	switch {
+	case s < min:
+		return fmt.Sprintf("%ds", s)
+	case s < hr:
+		return fmt.Sprintf("%dm", s/min)
+	case s < day:
+		return fmt.Sprintf("%dh %dm", s/hr, (s%hr)/min)
+	case s < month:
+		return fmt.Sprintf("%dd %dh", s/day, (s%day)/hr)
+	case s < year:
+		return fmt.Sprintf("%dmo %dd", s/month, (s%month)/day)
+	default:
+		return fmt.Sprintf("%dy %dmo", s/year, (s%year)/month)
+	}
+}
+
 // evalPPPoE watches the ISP session itself: whether it is established, how
 // long it has been up, and whether it recently flapped.
 func evalPPPoE(snap wan.State) Check {
@@ -90,12 +113,12 @@ func evalPPPoE(snap wan.State) Check {
 			Detail: "the PPPoE session is DOWN — the ISP link is disconnected or authentication failed", NumState: 2}
 	}
 	d := time.Duration(snap.UptimeSec) * time.Second
-	val := fmt.Sprintf("up %s", d.Round(time.Minute))
+	val := "up " + humanUp(d)
 	if d < 10*time.Minute {
 		return Check{Name: name, State: StateWarn, Value: val,
 			Detail: fmt.Sprintf("the session was re-established %s ago — the ISP link dropped recently; frequent repeats mean an ISP stability problem", d.Round(time.Second)), NumState: 1}
 	}
-	detail := "PPPoE session established for " + d.Round(time.Minute).String()
+	detail := "PPPoE session established for " + humanUp(d)
 	if snap.Addr != "" {
 		detail += fmt.Sprintf(" — WAN address %s (carrier-grade NAT: address changes are normal, instability shows up here as short uptimes)", snap.Addr)
 	}
