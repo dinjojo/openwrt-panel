@@ -278,7 +278,8 @@
       <div class="bg-[var(--panel)] border border-[var(--line)] rounded-2xl overflow-hidden">
         <div class="px-4 py-3 border-b border-[var(--line)] flex items-center justify-between gap-3">
           <span class="text-[11px] font-semibold uppercase tracking-widest text-[var(--muted)]">
-            LAN devices &mdash; live</span>
+            LAN devices &mdash; live
+            <span id="cl-orbi-note" class="normal-case tracking-normal font-medium text-[var(--faint)] ml-2"></span></span>
           <input id="cl-filter" type="search" placeholder="filter by name, ip, mac…"
                  class="bg-[var(--panel2)] border border-[var(--line)] rounded-lg px-3 py-1.5 text-xs
                         text-[var(--text)] placeholder-[var(--faint)] outline-none focus:border-[var(--blue)] w-56" />
@@ -1450,6 +1451,7 @@
     }
 
     async function pollClients() {
+      if (Date.now() - orbiAt > 60000) loadOrbi();
       try {
         const r = await fetch(appURL('/api/clients'));
         if (!r.ok) return;
@@ -1481,6 +1483,30 @@
       }
     }
 
+    // Orbi AP attached-device info (band, device type) joined into the
+    // client rows by MAC; refreshed on a slower cadence than live rates.
+    let orbiByMac = {};
+    let orbiAt = 0;
+    async function loadOrbi() {
+      try {
+        const d = await fetch(appURL('/api/orbi')).then(r => r.json());
+        const m = {};
+        (d.devices || []).forEach(dev => { m[(dev.mac || '').toUpperCase()] = dev; });
+        orbiByMac = m;
+        orbiAt = Date.now();
+        const el = document.getElementById('cl-orbi-note');
+        if (el) el.textContent = d.reachable
+          ? ((d.model || 'Orbi AP') + ' · ' + (d.devices || []).length + ' attached' + (d.busy ? ' · device list unavailable' : ''))
+          : 'Orbi AP not responding';
+        if (document.querySelector('.tab-btn[data-tab="clients"].tab-active')) renderClientsTable();
+      } catch (_) {}
+    }
+    function obBand(ct) {
+      if (ct === '2.4G') return '2.4 GHz';
+      if (ct === '5G') return '5 GHz';
+      return ct || '';
+    }
+
     function renderClientsTable() {
       const tbody = document.getElementById('cl-tbody');
       if (!tbody) return;
@@ -1501,7 +1527,11 @@
           : '<span class="inline-flex items-center gap-1.5 text-[var(--faint)]"><span class="w-2 h-2 rounded-full bg-[var(--faint)]"></span>' +
             'offline · ' + fmtAge(c.last_seen) + '</span>';
         const active = c.rx_rate + c.tx_rate > 1024; // > 1 kB/s
-        const sub = [c.ip, c.vendor].filter(Boolean).join(' · ');
+        const ob = orbiByMac[(c.mac || '').toUpperCase()];
+        const obSub = ob
+          ? 'Orbi · ' + obBand(ob.contype) + (ob.contype !== 'wired' && ob.signal ? ' · ' + ob.signal + '%' + (ob.linkspeed_mbps ? ' · ' + ob.linkspeed_mbps + ' Mbit/s' : '') : '')
+          : null;
+        const sub = [c.ip, c.vendor, obSub].filter(Boolean).join(' · ');
         return '<tr data-mac="' + h(c.mac) + '" data-name="' + h(c.name || c.mac) + '"' +
           ' data-ip="' + h(c.ip) + '" data-vendor="' + h(c.vendor || '') + '"' +
           ' title="View connection history"' +

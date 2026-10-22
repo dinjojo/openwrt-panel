@@ -16,6 +16,7 @@ import (
 
 	"github.com/galpt/cake-stats/pkg/clients"
 	"github.com/galpt/cake-stats/pkg/history"
+	"github.com/galpt/cake-stats/pkg/orbi"
 	"github.com/galpt/cake-stats/pkg/sysmon"
 	"github.com/galpt/cake-stats/pkg/types"
 	"github.com/galpt/cake-stats/pkg/vm"
@@ -64,7 +65,7 @@ const probeAgeLimit = 90 * time.Minute
 // Eval runs all checks. vm may be nil, in which case VM-backed checks report
 // unknown rather than failing. wan may be nil (PPPoE check reports unknown).
 // sys may be nil (its checks report unknown).
-func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *history.HistoryStore, store *clients.Store, wp *wan.Poller, sys *sysmon.Pollers) []Check {
+func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *history.HistoryStore, store *clients.Store, wp *wan.Poller, sys *sysmon.Pollers, op *orbi.Poller) []Check {
 	checks := []Check{
 		evalBufferbloat(ctx, client, live),
 		evalWANLatency(ctx, client),
@@ -82,6 +83,9 @@ func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *
 		evalStorage(diskSnap(sys)),
 		evalWANRejects(fwSnap(sys)),
 		evalConntrack(connSnap(sys)),
+	}
+	if op.Enabled() {
+		checks = append(checks, evalOrbi(op))
 	}
 	return checks
 }

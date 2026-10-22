@@ -27,6 +27,7 @@ import (
 	"github.com/galpt/cake-stats/pkg/health"
 	"github.com/galpt/cake-stats/pkg/history"
 	"github.com/galpt/cake-stats/pkg/log"
+	"github.com/galpt/cake-stats/pkg/orbi"
 	"github.com/galpt/cake-stats/pkg/parser"
 	"github.com/galpt/cake-stats/pkg/types"
 	"github.com/galpt/cake-stats/pkg/vm"
@@ -57,17 +58,19 @@ type Server struct {
 	clientStore  *clients.Store
 	wan          *wan.Poller
 	sys          *sysmon.Pollers
+	orbi         *orbi.Poller
 	events       *events.Store
 	version      string
 	configHashes map[string]string // last sha256 of each /etc/config file
 }
 
-func New(addr string, interval time.Duration, histCap int, vmURL string, version string) *Server {
+func New(addr string, interval time.Duration, histCap int, vmURL, version string, orb *orbi.Poller) *Server {
 	s := &Server{
 		clients:      make(map[chan []byte]struct{}),
 		pollInterval: interval,
 		history:      history.NewHistoryStore(histCap),
 		clientStore:  clients.New(30*time.Second, vmURL),
+		orbi:         orb,
 		version:      version,
 	}
 	if vmURL != "" {
@@ -93,6 +96,7 @@ func New(addr string, interval time.Duration, histCap int, vmURL string, version
 	app.Get("/api/percentiles", s.handleAPIPercentiles)
 	app.Get("/api/incidents", s.handleAPIIncidents)
 	app.Get("/api/tunnel", s.handleAPITunnel)
+	app.Get("/api/orbi", s.handleAPIOrbi)
 	app.Get("/events", s.handleSSE)
 
 	s.app = app
@@ -105,6 +109,10 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	s.sys = sysmon.NewAll(ctx)
 	s.events = events.New("/opt/monitoring/cake-stats-events.json")
 	s.events.Add("monitor", "info", "Monitor restarted ("+s.version+") — watching WAN, WARP and Cake")
+	if s.orbi.Enabled() {
+		s.orbi.SetEventHook(s.events.Add)
+	}
+	go s.orbiRun(ctx)
 	go s.watchEvents(ctx)
 	go s.runPoller(ctx)
 	go s.clientStore.Run(ctx, s.vmc) // per-client accounting poller
@@ -343,7 +351,7 @@ func (s *Server) handleAPIHealth(c fiber.Ctx) error {
 		s.statsMu.RLock()
 		live = s.stats
 		s.statsMu.RUnlock()
-		s.healthCache = health.Eval(c.Context(), s.vmc, live, s.history, s.clientStore, s.wan, s.sys)
+		s.healthCache = health.Eval(c.Context(), s.vmc, live, s.history, s.clientStore, s.wan, s.sys, s.orbi)
 		s.healthAt = time.Now()
 	}
 
@@ -837,6 +845,23 @@ func (s *Server) handleSSE(c fiber.Ctx) error {
 }
 
 // handleAPIEvents serves the recent notable-events feed.
+// orbiRun starts the Orbi AP poller when a target is configured.
+func (s *Server) orbiRun(ctx context.Context) {
+	if !s.orbi.Enabled() {
+		return
+	}
+	s.orbi.Run(ctx)
+}
+
+// handleAPIOrbi reports the Orbi AP snapshot: reachability, firmware and
+// the attached-device list (band, per-device rates).
+func (s *Server) handleAPIOrbi(c fiber.Ctx) error {
+	st := s.orbi.Snapshot()
+	c.Set("Content-Type", "application/json; charset=utf-8")
+	b, _ := json.Marshal(st)
+	return c.Send(b)
+}
+
 func (s *Server) handleAPIEvents(c fiber.Ctx) error {
 	if s.events == nil {
 		return c.JSON([]events.Event{})
