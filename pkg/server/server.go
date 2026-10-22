@@ -104,7 +104,7 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 	s.wan = wan.New(ctx)
 	s.sys = sysmon.NewAll(ctx)
 	s.events = events.New("/opt/monitoring/cake-stats-events.json")
-	s.events.Add("monitor", "info", "Monitor restarted (v"+s.version+") — watching WAN, WARP and Cake")
+	s.events.Add("monitor", "info", "Monitor restarted ("+s.version+") — watching WAN, WARP and Cake")
 	go s.watchEvents(ctx)
 	go s.runPoller(ctx)
 	go s.clientStore.Run(ctx, s.vmc) // per-client accounting poller
@@ -212,6 +212,7 @@ var vmRanges = map[string]vmRangeSpec{
 	"6h":  {step: "60s", rateLimit: "4m"},
 	"24h": {step: "120s", rateLimit: "8m"},
 	"7d":  {step: "600s", rateLimit: "30m"},
+	"30d": {step: "1800s", rateLimit: "1h"},
 }
 
 // handleAPIHistoryVM serves long-range history assembled from VictoriaMetrics
@@ -637,7 +638,7 @@ func (s *Server) handleAPIHistorySystem(c fiber.Ctx) error {
 	rng := c.Query("range", "6h")
 	spec, ok := vmRanges[rng]
 	if !ok {
-		return c.Status(400).SendString(`{"error":"range must be one of 1h,6h,24h,7d"}`)
+		return c.Status(400).SendString(`{"error":"range must be one of 1h,6h,24h,7d,30d"}`)
 	}
 	end := time.Now().Unix()
 	start := rangeStart(rng, end)
@@ -765,6 +766,8 @@ func rangeStart(rng string, end int64) int64 {
 		return end - 24*3600
 	case "7d":
 		return end - 7*24*3600
+	case "30d":
+		return end - 30*24*3600
 	}
 	return end - 6*3600
 }

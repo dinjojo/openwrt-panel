@@ -23,6 +23,18 @@
       --shadow: 0 1px 3px rgba(20,32,51,0.10), 0 1px 2px rgba(20,32,51,0.06);
       color-scheme: light;
     }
+
+    /* Sidebar/bottom nav tab buttons (desktop sidebar + mobile bottom bar) */
+    .tab-btn { display: flex; align-items: center; gap: .5rem; width: 100%;
+      padding: .55rem .75rem; border-radius: .65rem; font-size: .75rem; font-weight: 700;
+      letter-spacing: .025em; color: var(--muted);
+      transition: color .15s, background .15s; text-align: left; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.tab-active { background: var(--blue); color: var(--accent-text); }
+    #tabbar { padding-bottom: max(.25rem, env(safe-area-inset-bottom)); }
+    #tabbar .tab-btn { width: auto; flex: 1 1 0; flex-direction: column; gap: .125rem;
+      padding: .4rem 0 .3rem; font-size: .625rem; align-items: center;
+      justify-content: center; text-align: center; }
     html[data-theme="dark"] {
       /* Dark — cool slate ops console: navy-graphite surfaces, desaturated
          status tints, sky accent. Per ui-ux guidance: elevate surfaces in
@@ -77,23 +89,53 @@
 
 <body class="bg-[var(--bg)] text-[var(--text)] min-h-screen text-sm antialiased">
 
-  <!-- ═══ Top bar ═══════════════════════════════════════════════════════════ -->
-  <header class="bg-[var(--head)]/95 backdrop-blur border-b border-[var(--line)] px-4 sm:px-6 py-3
-                 flex flex-wrap items-center justify-between gap-2
-                 sticky top-0 z-50">
-    <div class="flex items-center gap-3">
-      <div class="w-2.5 h-2.5 rounded-sm bg-[var(--blue)] shadow-[0_0_8px_var(--blue)]"></div>
-      <span class="font-extrabold tracking-tight text-lg display">cake<span class="text-[var(--blue)]">-stats</span></span>
-      <span id="iface-count" class="text-[var(--muted)] text-xs hidden sm:inline"></span>
+  <!-- ═══ Shell: collapsible sidebar (desktop) + content column ═════════════ -->
+  <div class="flex min-h-screen">
+  <aside id="sidebar" class="hidden md:flex flex-col shrink-0 sticky top-0 h-screen
+                             border-r border-[var(--line)] bg-[var(--panel)]
+                             transition-[width] duration-200 p-3"
+         style="width:15rem">
+    <div class="flex items-center justify-between px-1 mb-4">
+      <div class="flex items-center gap-2 overflow-hidden whitespace-nowrap">
+        <div class="w-2.5 h-2.5 shrink-0 rounded-sm bg-[var(--blue)] shadow-[0_0_8px_var(--blue)]"></div>
+        <span class="font-extrabold tracking-tight text-lg display sidebar-label">cake<span class="text-[var(--blue)]">-stats</span></span>
+      </div>
+      <button id="sidebar-toggle" aria-label="Collapse sidebar" title="Collapse sidebar"
+              class="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg border border-[var(--line)]
+                     text-[var(--muted)] hover:text-[var(--text)] transition-colors text-xs">&laquo;</button>
     </div>
-    <!-- Primary nav: one dashboard, three views -->
-    <nav id="tabs" class="flex items-center gap-1 bg-[var(--panel2)] rounded-xl p-1" role="tablist">
-      <button data-tab="overview" role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">Overview</button>
-      <button data-tab="diag"    role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">Diagnostics</button>
-      <button data-tab="sqm"     role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">SQM</button>
-      <button data-tab="clients" role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">Clients</button>
-      <button data-tab="system"  role="tab" class="tab-btn display px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide">System</button>
+    <!-- Primary nav: one dashboard, five views -->
+    <nav id="tabs" class="flex-1 flex flex-col gap-1" role="tablist">
+      <button data-tab="overview" role="tab" class="tab-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span class="sidebar-label">Overview</span></button>
+      <button data-tab="diag" role="tab" class="tab-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+        <span class="sidebar-label">Diagnostics</span></button>
+      <button data-tab="sqm" role="tab" class="tab-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a8 8 0 1 1 16 0"/><path d="M12 14l4-4"/></svg>
+        <span class="sidebar-label">SQM</span></button>
+      <button data-tab="clients" role="tab" class="tab-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="10" height="13" rx="1.5"/><rect x="14" y="9" width="8" height="9" rx="1.5"/></svg>
+        <span class="sidebar-label">Clients</span></button>
+      <button data-tab="system" role="tab" class="tab-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg>
+        <span class="sidebar-label">System</span></button>
     </nav>
+    <div class="pt-3 mt-1 border-t border-[var(--line)] text-[11px]">
+      <span id="iface-count" class="text-[var(--muted)] sidebar-label"></span>
+    </div>
+  </aside>
+
+  <div class="flex-1 min-w-0 flex flex-col">
+  <header class="bg-[var(--head)]/95 backdrop-blur border-b border-[var(--line)] px-4 sm:px-6 py-3
+                 flex items-center justify-between gap-2
+                 sticky top-0 z-50">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="md:hidden w-2.5 h-2.5 rounded-sm bg-[var(--blue)] shadow-[0_0_8px_var(--blue)]"></div>
+      <span class="md:hidden font-extrabold tracking-tight text-lg display">cake<span class="text-[var(--blue)]">-stats</span></span>
+      <span id="page-title" class="hidden md:block text-sm font-semibold text-[var(--muted)]"></span>
+    </div>
     <div class="flex items-center gap-3 text-xs">
       <span id="conn-status" class="text-[var(--muted)] flex items-center gap-1.5">
         <span class="w-1.5 h-1.5 rounded-full bg-[var(--muted)]"></span>connecting</span>
@@ -115,7 +157,7 @@
   </header>
 
   <!-- ═══ Main content ══════════════════════════════════════════════════════ -->
-  <main id="app" class="p-3 sm:p-5 space-y-5 max-w-screen-2xl mx-auto">
+  <main id="app" class="p-3 sm:p-5 space-y-5 max-w-screen-2xl mx-auto w-full pb-20 md:pb-5">
 
     <!-- ═══ Tab: Overview — UniFi-style hero row, problems, feed ═════════ -->
     <section id="tab-overview" role="tabpanel" class="hidden space-y-4">
@@ -348,14 +390,45 @@
         </div>
       </div>
 
-      <!-- WAN traffic · 24h: line-level detail belongs here with the other
+      <!-- WAN traffic: line-level detail belongs here with the other
            internet-line panels, not at the bottom of the Overview -->
       <div class="card rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-4 mb-6">
-        <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)] mb-2">WAN traffic &middot; 24h</div>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted)]">WAN traffic</div>
+          <div class="flex items-center gap-1 text-[11px] bg-[var(--panel2)] rounded-lg p-0.5">
+            <button data-wanrange="1h"  class="wanrange-btn px-2.5 py-1 rounded-md">1H</button>
+            <button data-wanrange="6h"  class="wanrange-btn px-2.5 py-1 rounded-md">6H</button>
+            <button data-wanrange="24h" class="wanrange-btn px-2.5 py-1 rounded-md">24H</button>
+            <button data-wanrange="7d"  class="wanrange-btn px-2.5 py-1 rounded-md">7D</button>
+            <button data-wanrange="30d" class="wanrange-btn px-2.5 py-1 rounded-md">30D</button>
+          </div>
+        </div>
         <div id="ov-wanchart"></div>
       </div>
     </section>
   </main>
+  </div><!-- /content column -->
+  </div><!-- /shell -->
+
+  <!-- Mobile bottom nav (sidebar is desktop-only) -->
+  <nav id="tabbar" class="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-[var(--line)]
+                          bg-[var(--head)]/95 backdrop-blur flex p-1" role="tablist">
+    <button data-tab="overview" role="tab" class="tab-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Overview</span></button>
+    <button data-tab="diag" role="tab" class="tab-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+      <span>Diagnostics</span></button>
+    <button data-tab="sqm" role="tab" class="tab-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a8 8 0 1 1 16 0"/><path d="M12 14l4-4"/></svg>
+      <span>SQM</span></button>
+    <button data-tab="clients" role="tab" class="tab-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="10" height="13" rx="1.5"/><rect x="14" y="9" width="8" height="9" rx="1.5"/></svg>
+      <span>Clients</span></button>
+    <button data-tab="system" role="tab" class="tab-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg>
+      <span>System</span></button>
+  </nav>
 
   <!-- ═══ History modal ════════════════════════════════════════════════════ -->
   <div id="chart-modal" style="display:none"
@@ -1294,15 +1367,13 @@
       delete tabTimers[tab];
     }
 
+    const tabTitles = { overview: 'Overview', diag: 'Diagnostics', sqm: 'SQM', clients: 'Clients', system: 'System' };
     function setTab(name) {
       activeTab = name;
       try { sessionStorage.setItem('cakestats-tab', name); } catch (_) {}
-      document.querySelectorAll('.tab-btn').forEach(b => {
-        const on = b.dataset.tab === name;
-        b.className = 'tab-btn px-4 sm:px-5 py-2 rounded-lg text-xs font-bold tracking-wide ' +
-          (on ? 'bg-[var(--blue)] text-[var(--accent-text)]'
-              : 'text-[var(--muted)] hover:text-[var(--text)]');
-      });
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('tab-active', b.dataset.tab === name));
+      const pt = document.getElementById('page-title');
+      if (pt) pt.textContent = tabTitles[name] || '';
       ['overview', 'sqm', 'clients', 'diag', 'system'].forEach(t => {
         document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
       });
@@ -1342,7 +1413,7 @@
       }
     }
 
-    document.getElementById('tabs').addEventListener('click', e => {
+    document.addEventListener('click', e => {
       const btn = e.target.closest('.tab-btn');
       if (btn) setTab(btn.dataset.tab);
     });
@@ -1458,6 +1529,8 @@
       if (sr) { sysRange = sr.dataset.sysrange; _setPillBtns('.sysrange-btn', 'sysrange', sysRange); loadSystemHistory(); }
       const pr = e.target.closest('.pctrange-btn');
       if (pr) { sysPctRange = pr.dataset.pctrange; _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange); loadLatencyQuality(); }
+      const wr = e.target.closest('.wanrange-btn');
+      if (wr) { wanRange = wr.dataset.wanrange; _setPillBtns('.wanrange-btn', 'wanrange', wanRange); loadDiagWanChart(); }
       const ir = e.target.closest('.incrange-btn');
       if (ir) { sysIncRange = ir.dataset.incrange; _setPillBtns('.incrange-btn', 'incrange', sysIncRange); loadIncidents(); }
       const cr = e.target.closest('.crange-btn');
@@ -2186,26 +2259,34 @@
       } catch (e) { console.error('[overview]', e); }
     }
 
-    // WAN traffic · 24h chart — lives on the Diagnostics tab (line detail).
+    // WAN traffic chart — lives on the Diagnostics tab (line detail).
     // Rendered only while that tab is visible; uPlot needs layout width,
-    // which a hidden container doesn't have.
+    // which a hidden container doesn't have. Each range caches separately;
+    // ovWanData stays untouched (the Overview hero expects a 24h payload).
+    let wanRange = '24h';
+    const wanCache = {};  // range -> { d, at }
     async function loadDiagWanChart() {
       try {
-        if (!ovWanData || Date.now() - ovWanAt > 60000) {
-          ovWanData = await fetch(appURL('/api/history/system?range=24h')).then(r => r.json());
-          ovWanAt = Date.now();
+        let wd;
+        const c = wanCache[wanRange];
+        if (c && Date.now() - c.at < 60000) {
+          wd = c.d;
+        } else {
+          wd = await fetch(appURL('/api/history/system?range=' + wanRange)).then(r => r.json());
+          wanCache[wanRange] = { d: wd, at: Date.now() };
         }
-        if (!ovWanData || !ovWanData.t || ovWanData.t.length < 2 || !isUPlotReady()) return;
+        if (!wd || !wd.t || wd.t.length < 2 || !isUPlotReady()) return;
         const cd = document.getElementById('ov-wanchart');
         if (!cd || cd.offsetParent === null) return; // tab hidden
         const W = Math.max(200, cd.clientWidth - 4);
+        cd.innerHTML = ''; // makeChart appends; clear so re-renders don't stack
         ovPlots.forEach(p => { try { p.u.destroy(); } catch (_) {} });
         const css = getComputedStyle(document.documentElement);
         ovPlots = [{
-          u: makeChart(cd, W, 130, ovWanData.t, [
-            { label: 'Download (Mbit/s)', data: ovWanData.wanrx, stroke: css.getPropertyValue('--blue').trim(), fill: 'rgba(56,189,248,0.10)' },
-            { label: 'Upload (Mbit/s)', data: ovWanData.wantx, stroke: css.getPropertyValue('--green').trim(), fill: 'rgba(74,222,128,0.10)' },
-          ], 'WAN traffic — download vs upload (Mbit/s)', v => v.toFixed(0), 'ov-x')
+          u: makeChart(cd, W, 130, wd.t, [
+            { label: 'Download (Mbit/s)', data: wd.wanrx, stroke: css.getPropertyValue('--blue').trim(), fill: 'rgba(56,189,248,0.10)' },
+            { label: 'Upload (Mbit/s)', data: wd.wantx, stroke: css.getPropertyValue('--green').trim(), fill: 'rgba(74,222,128,0.10)' },
+          ], 'Download vs upload (Mbit/s)', v => v.toFixed(0), 'ov-x')
         }];
       } catch (e) { console.error('[diag-wan]', e); }
     }
@@ -2216,8 +2297,26 @@
 
     // ── Boot ──────────────────────────────────────────────────────────────
     seedHistory(); // seed sparklines from server ring buffer before first SSE
+    // Collapsible sidebar: icons only when collapsed; state persists.
+    const sb = document.getElementById('sidebar');
+    const sbToggle = document.getElementById('sidebar-toggle');
+    function applySidebar() {
+      let collapsed = false;
+      try { collapsed = localStorage.getItem('cakestats-sidebar') === '1'; } catch (_) {}
+      sb.style.width = collapsed ? '4.25rem' : '15rem';
+      document.querySelectorAll('#sidebar .sidebar-label').forEach(el => { el.style.display = collapsed ? 'none' : ''; });
+      if (sbToggle) sbToggle.textContent = collapsed ? '\u00BB' : '\u00AB';
+    }
+    if (sbToggle) sbToggle.addEventListener('click', () => {
+      let collapsed = false;
+      try { collapsed = localStorage.getItem('cakestats-sidebar') === '1'; } catch (_) {}
+      try { localStorage.setItem('cakestats-sidebar', collapsed ? '0' : '1'); } catch (_) {}
+      applySidebar();
+    });
+    applySidebar();
     _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange);
     _setPillBtns('.incrange-btn', 'incrange', sysIncRange);
+    _setPillBtns('.wanrange-btn', 'wanrange', wanRange);
     // Restore the tab the user was on before a reload (e.g. theme toggle).
     let bootTab = 'overview';
     try { bootTab = sessionStorage.getItem('cakestats-tab') || 'overview'; } catch (_) {}
