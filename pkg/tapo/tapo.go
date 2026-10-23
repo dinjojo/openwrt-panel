@@ -46,12 +46,13 @@ type plugClient interface {
 }
 
 // clientFactory opens an authenticated session with the plug. The upstream
-// library performs the handshake inside its constructor, so a fresh session
-// is opened per poll and the poller holds no long-lived credential state.
+// library performs the handshake inside its constructor.
 type clientFactory func(ctx context.Context) (plugClient, error)
 
 // Poller refreshes the plug snapshot every interval and pushes gauges to
-// VictoriaMetrics.
+// VictoriaMetrics. It keeps one authenticated session and re-dials only when
+// the plug rejects it — the plug rate-limits fresh handshakes (HTTP 403), so
+// logging in from scratch every poll eventually locks itself out.
 type Poller struct {
 	mu      sync.RWMutex
 	conf    Config
@@ -59,6 +60,7 @@ type Poller struct {
 	everOK  bool          // at least one good poll since start
 	epm     int           // energy usage support: 0 unknown, 1 yes, -1 no
 	epmNext time.Time     // when to retry EPM after a failure
+	client  plugClient    // live session, nil until first dial
 	factory clientFactory // pluggable for tests
 	vmc     *vm.Client
 }
@@ -102,20 +104,42 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 // refresh takes one poll. A failed poll marks the plug unavailable but keeps
-// the last known values, mirroring how the other pollers degrade.
+// the last known values, mirroring how the other pollers degrade. The session
+// is reused across polls; on a rejected or expired session it is re-dialed
+// once before the poll counts as failed.
 func (p *Poller) refresh() {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	c, err := p.factory(ctx)
-	if err != nil {
-		p.fail(err)
-		return
+	p.mu.RLock()
+	c := p.client
+	p.mu.RUnlock()
+	var err error
+	if c == nil {
+		c, err = p.dial(ctx)
+		if err != nil {
+			p.fail(err)
+			return
+		}
+		p.setClient(c)
 	}
+
 	info, err := c.DeviceInfo(ctx)
 	if err != nil {
-		p.fail(err)
-		return
+		// Session expired or rejected (the plug answers 403): one fresh
+		// handshake before giving up on this poll.
+		p.setClient(nil)
+		c, derr := p.dial(ctx)
+		if derr != nil {
+			p.fail(derr)
+			return
+		}
+		p.setClient(c)
+		info, err = c.DeviceInfo(ctx)
+		if err != nil {
+			p.fail(err)
+			return
+		}
 	}
 
 	st := State{
@@ -149,6 +173,16 @@ func (p *Poller) refresh() {
 	p.everOK = true
 	p.mu.Unlock()
 	p.pushVM(st)
+}
+
+func (p *Poller) dial(ctx context.Context) (plugClient, error) {
+	return p.factory(ctx)
+}
+
+func (p *Poller) setClient(c plugClient) {
+	p.mu.Lock()
+	p.client = c
+	p.mu.Unlock()
 }
 
 func (p *Poller) fail(err error) {

@@ -2339,7 +2339,16 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       // Wi-Fi table: the Wi-Fi group. LAN table: wired, then offline (an
       // offline device has no Orbi association, so it can't be placed).
       const wsec = [];
-      if (wifi.length) wsec.push({ label: 'Wi-Fi — ' + wifi.length, list: wifi, wifi: true, icon: ICON.wifi, color: 'var(--accent)' });
+      // Wi-Fi clients group by the mesh unit they associate through, so
+      // "who is on the router vs the satellite" is a header, not buried in
+      // each row's fine print.
+      const apOf = c => ((orbiByMac[(c.mac || '').toUpperCase()] || {}).conn_orbi || '').toUpperCase();
+      const byAp = {};
+      wifi.forEach(c => { (byAp[apOf(c)] = byAp[apOf(c)] || []).push(c); });
+      Object.keys(byAp).sort((a, b) => byAp[b].length - byAp[a].length).forEach(mac => {
+        const label = orbiApNames[mac] || orbiRouterName + ' · router';
+        wsec.push({ label: label + ' — ' + byAp[mac].length, list: byAp[mac], wifi: true, icon: ICON.wifi, color: 'var(--accent)' });
+      });
       const sec = [];
       if (wired.length) sec.push({ label: 'Wired — ' + wired.length, list: wired, wifi: false, icon: ICON.wired, color: 'var(--muted)' });
       if (offline.length) sec.push({ label: 'Offline — ' + offline.length, list: offline, wifi: false, icon: ICON.offline, color: 'var(--faint)' });

@@ -137,6 +137,39 @@ func TestEnergyTransientFailureKeepsSupport(t *testing.T) {
 	}
 }
 
+func TestSessionReusedAndRedialsOnError(t *testing.T) {
+	dials := 0
+	good := &fakePlug{info: plugInfo(true)}
+	var current *fakePlug
+	p := &Poller{conf: Config{Host: "192.0.2.10"}}
+	p.factory = func(context.Context) (plugClient, error) {
+		dials++
+		if dials == 1 {
+			current = good
+		} else {
+			current = &fakePlug{info: plugInfo(false), energyE: errors.New("403")}
+		}
+		return current, nil
+	}
+
+	p.refresh()
+	p.refresh()
+	if dials != 1 {
+		t.Fatalf("healthy session must be reused, dials = %d", dials)
+	}
+
+	// Session goes stale: the next poll re-dials exactly once and recovers
+	// with the new session.
+	good.infoErr = errors.New("403")
+	p.refresh()
+	if dials != 2 {
+		t.Fatalf("a rejected session must trigger one re-dial, dials = %d", dials)
+	}
+	if st := p.Snapshot(); !st.Available {
+		t.Fatalf("state after re-dial = %+v, want available", st)
+	}
+}
+
 func TestEnergySupported(t *testing.T) {
 	c := &fakePlug{info: plugInfo(true)}
 	c.energy = &tapo.EnergyUsageResponse{}
