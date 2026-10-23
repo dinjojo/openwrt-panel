@@ -419,6 +419,74 @@ func TestPollFailure(t *testing.T) {
 	}
 }
 
+func TestPollMarksVanishedClientsOffline(t *testing.T) {
+	env := newFakeEnv(t)
+	env.set("nlbw", "aa:bb:cc:00:00:01 4 1000 1 500 1\n00:11:22:33:44:55 2 2000 1 700 1\n", 0)
+	env.set("neigh", neighOut, 0)
+	s := newTestStore(t)
+	s.namesAt = time.Now()
+	s.leases = map[string]string{"aa:bb:cc:00:00:01": "phone"}
+	if err := s.poll(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second poll: the phone has traffic, so it is online with live rates.
+	env.set("nlbw", "aa:bb:cc:00:00:01 4 11000 1 2500 1\n00:11:22:33:44:55 2 2000 1 700 1\n", 0)
+	s.mu.Lock()
+	s.prevAt = s.prevAt.Add(-10 * time.Second)
+	s.mu.Unlock()
+	if err := s.poll(); err != nil {
+		t.Fatal(err)
+	}
+	phone := func() Client {
+		t.Helper()
+		for _, c := range s.Snapshot() {
+			if c.MAC == "aa:bb:cc:00:00:01" {
+				return c
+			}
+		}
+		t.Fatal("phone missing from Snapshot()")
+		return Client{}
+	}
+	before := phone()
+	if !before.Online || before.RxRate == 0 || before.TxRate == 0 || before.LastSeen == 0 {
+		t.Fatalf("active phone = %+v, want online with rates", before)
+	}
+
+	// A failed poll says nothing about presence: state is kept as is.
+	env.set("nlbw", "", 1)
+	if err := s.poll(); err == nil {
+		t.Fatal("poll with failing nlbw returned nil error")
+	}
+	if c := phone(); c != before {
+		t.Errorf("after failed poll phone = %+v, want unchanged %+v", c, before)
+	}
+
+	// The phone drops out of nlbw output (still in the neigh table, which
+	// must not resurrect it): offline, no live figures, history kept.
+	env.set("nlbw", "00:11:22:33:44:55 2 2000 1 700 1\n", 0)
+	if err := s.poll(); err != nil {
+		t.Fatal(err)
+	}
+	want := before
+	want.Online, want.RxRate, want.TxRate, want.Conns = false, 0, 0, 0
+	if c := phone(); c != want {
+		t.Errorf("vanished phone = %+v\nwant %+v", c, want)
+	}
+	if n := len(s.Snapshot()); n != 2 {
+		t.Errorf("Snapshot() has %d clients, want 2 (vanished devices stay listed)", n)
+	}
+
+	// It comes back: online again, rates measured from the fresh baseline.
+	env.set("nlbw", "aa:bb:cc:00:00:01 1 12000 1 3000 1\n", 0)
+	if err := s.poll(); err != nil {
+		t.Fatal(err)
+	}
+	if c := phone(); !c.Online || c.Conns != 1 || c.RxTotal != 12000 || c.RxRate != 0 {
+		t.Errorf("returning phone = %+v, want online, conns 1, total 12000, no rate yet", c)
+	}
+}
+
 func TestRunPushesCountersToVictoriaMetrics(t *testing.T) {
 	env := newFakeEnv(t)
 	env.set("nlbw", "aa:bb:cc:00:00:01 7 1000 1 500 1\n", 0)

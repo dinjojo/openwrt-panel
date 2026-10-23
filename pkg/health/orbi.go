@@ -17,11 +17,11 @@ func evalOrbi(op *orbi.Poller) Check {
 	st := op.Snapshot()
 
 	if !st.Reachable {
-		return Check{Name: name, State: StateCrit, Value: "no response",
+		return Check{Name: name, State: StateCrit, Value: "no response", NumState: 2,
 			Detail: "the Orbi AP is not responding on the network — wireless devices lose connectivity"}
 	}
 	if !st.At.IsZero() && time.Since(st.At) > 10*time.Minute {
-		return Check{Name: name, State: StateWarn, Value: "stale",
+		return Check{Name: name, State: StateWarn, Value: "stale", NumState: 1,
 			Detail: fmt.Sprintf("no fresh data from the AP for %s — poll blocked or AP degraded", time.Since(st.At).Round(time.Minute))}
 	}
 
@@ -37,7 +37,7 @@ func evalOrbi(op *orbi.Poller) Check {
 	if st.Busy {
 		detail += " — its device list is unavailable right now, showing the last known devices"
 	}
-	return Check{Name: name, State: StateOK, Value: fmt.Sprintf("%d devices", len(st.Devices)), Detail: detail}
+	return Check{Name: name, State: StateOK, Value: fmt.Sprintf("%d devices", len(st.Devices)), Detail: detail, NumState: 0}
 }
 
 func orbiLabel(st orbi.State) string {
@@ -54,7 +54,7 @@ func evalWifiSignal(op *orbi.Poller) Check {
 	const name = "Wi-Fi signal"
 	st := op.Snapshot()
 	if st.Busy || len(st.Devices) == 0 {
-		return Check{Name: name, State: StateUnknown, Value: "—",
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1,
 			Detail: "no fresh Wi-Fi device list from the AP"}
 	}
 	weakest := -1
@@ -69,18 +69,18 @@ func evalWifiSignal(op *orbi.Poller) Check {
 		}
 	}
 	if weakest == -1 {
-		return Check{Name: name, State: StateUnknown, Value: "—",
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1,
 			Detail: "no wireless clients are connected right now"}
 	}
 	detail := "weakest client is " + who + " on " + bandLabel(band) +
 		" — for reference, 70%+ is strong, 50–70% is usable, below 50% shows in slow speeds and dropouts"
 	if weakest < 35 {
-		return Check{Name: name, State: StateCrit, Value: strconv.Itoa(weakest) + "%", Detail: detail}
+		return Check{Name: name, State: StateCrit, Value: strconv.Itoa(weakest) + "%", Detail: detail, NumState: 2}
 	}
 	if weakest < 50 {
-		return Check{Name: name, State: StateWarn, Value: strconv.Itoa(weakest) + "%", Detail: detail}
+		return Check{Name: name, State: StateWarn, Value: strconv.Itoa(weakest) + "%", Detail: detail, NumState: 1}
 	}
-	return Check{Name: name, State: StateOK, Value: strconv.Itoa(weakest) + "%", Detail: detail}
+	return Check{Name: name, State: StateOK, Value: strconv.Itoa(weakest) + "%", Detail: detail, NumState: 0}
 }
 
 func bandLabel(ct string) string {

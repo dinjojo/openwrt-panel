@@ -20,14 +20,11 @@ type want struct {
 	value    string   // exact Value, "" = only require non-empty
 	contains []string // substrings the Detail must contain
 	absent   []string // substrings the Detail must NOT contain
-	// numStateBug marks a known defect: the evaluator returns a warn/crit
-	// State but leaves NumState at 0. Remove once fixed.
-	numStateBug bool
 }
 
 // checkCommon asserts the properties every Check must have: the expected
-// name and state, a non-empty value and detail, and (for ok/warn/crit) a
-// NumState consistent with the State.
+// name and state, a non-empty value and detail, and a NumState consistent
+// with the State (-1/0/1/2 for unknown/ok/warn/crit).
 func checkCommon(t *testing.T, c Check, name string, w want) {
 	t.Helper()
 	if c.Name != name {
@@ -45,9 +42,7 @@ func checkCommon(t *testing.T, c Check, name string, w want) {
 	if strings.TrimSpace(c.Detail) == "" {
 		t.Error("Detail is empty")
 	}
-	if w.numStateBug && c.NumState == 0 {
-		t.Logf("KNOWN BUG: %s returns State %q with NumState 0", c.Name, c.State)
-	} else if c.State != StateUnknown && c.NumState != numState(c.State) {
+	if c.NumState != numState(c.State) {
 		t.Errorf("NumState = %v, inconsistent with State %q", c.NumState, c.State)
 	}
 	for _, s := range w.contains {
@@ -125,6 +120,13 @@ func TestShapedBits(t *testing.T) {
 		{"500Kbit", 500e3},
 		{"2Tbit", 2e12},
 		{"100bit", 100},
+		// tc "bps" is BYTES per second: 8 bits each.
+		{"100bps", 800},
+		{"5Mbps", 40e6},
+		{"51875Kbps", 415e6},
+		{"1Gbps", 8e9},
+		{"500kbit", 500e3},
+		{"5mbps", 40e6},
 		{"  40Mbit\n", 40e6},
 		{"unlimited", 0},
 		{"", 0},
@@ -197,6 +199,8 @@ func TestEvalQueue(t *testing.T) {
 		{"far above", []types.CakeStats{q("eth0", 45)},
 			want{state: StateCrit, contains: []string{"far above target"}}},
 		{"boundary 30 ms is crit", []types.CakeStats{q("eth0", 30)}, want{state: StateCrit}},
+		{"all delays zero names the interfaces", []types.CakeStats{q("eth0", 0), q("ifb4eth0", 0)},
+			want{state: StateOK, value: "peak 0.00 ms", contains: []string{"on eth0, ifb4eth0", "well under"}, absent: []string{"on  "}}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -330,6 +334,12 @@ func TestEvalStorage(t *testing.T) {
 			want{state: StateCrit, contains: []string{"critical_warning=4"}}},
 		{"spare exhausted", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 5 }),
 			want{state: StateCrit, contains: []string{"spare 5%"}}},
+		{"spare not reported is unknown, not crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0 }),
+			want{state: StateUnknown, contains: []string{"did not report its available spare"}}},
+		{"spare not reported still surfaces media errors", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.MediaErrors = 3 }),
+			want{state: StateWarn, contains: []string{"3 media errors"}}},
+		{"zero spare flagged by critical_warning stays crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.CriticalWarning = 1 }),
+			want{state: StateCrit, contains: []string{"critical_warning=1", "spare 0%"}}},
 		{"media errors", mod(func(s *sysmon.DiskState) { s.MediaErrors = 2 }),
 			want{state: StateWarn, contains: []string{"2 media errors"}}},
 		{"worn out", mod(func(s *sysmon.DiskState) { s.PercentUsed = 93 }),
@@ -378,7 +388,7 @@ func TestEvalWANRejects(t *testing.T) {
 func TestEvalClientsUnavailable(t *testing.T) {
 	for _, s := range []*clients.Store{nil, {}} {
 		c := evalClients(s)
-		if c.Name != "Device tracking" || c.State != StateWarn || c.Value != "off" || !strings.Contains(c.Detail, "nlbwmon") {
+		if c.Name != "Device tracking" || c.State != StateWarn || c.NumState != 1 || c.Value != "off" || !strings.Contains(c.Detail, "nlbwmon") {
 			t.Errorf("evalClients(%v) = %+v", s, c)
 		}
 	}
@@ -389,11 +399,11 @@ func TestEvalOrbiDisabledOrUnreachable(t *testing.T) {
 	const secret = "hunter2-orbi-pass"
 	for _, op := range []*orbi.Poller{nil, orbi.New("", "", "", nil), orbi.New("http://192.0.2.1", "admin", secret, nil)} {
 		c := evalOrbi(op)
-		if c.Name != "WiFi AP" || c.State != StateCrit || c.Value != "no response" || c.Detail == "" {
+		if c.Name != "WiFi AP" || c.State != StateCrit || c.NumState != 2 || c.Value != "no response" || c.Detail == "" {
 			t.Errorf("evalOrbi = %+v", c)
 		}
 		s := evalWifiSignal(op)
-		if s.Name != "Wi-Fi signal" || s.State != StateUnknown || s.Detail == "" {
+		if s.Name != "Wi-Fi signal" || s.State != StateUnknown || s.NumState != -1 || s.Detail == "" {
 			t.Errorf("evalWifiSignal = %+v", s)
 		}
 		for _, d := range []string{c.Detail, c.Value, s.Detail, s.Value} {

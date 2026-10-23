@@ -85,10 +85,6 @@ func TestEasyJSONMatchesStructTags(t *testing.T) {
 			got, want := jsonKeys(t, eb), jsonKeys(t, pb)
 			missing, extra := diffKeys(got, want)
 			for _, k := range missing {
-				if knownStaleKeys[k] {
-					t.Logf("KNOWN BUG: easyjson omits struct field %q (types_easyjson.go is stale)", k)
-					continue
-				}
 				t.Errorf("easyjson output is missing struct-tag key %q", k)
 			}
 			for _, k := range extra {
@@ -97,11 +93,6 @@ func TestEasyJSONMatchesStructTags(t *testing.T) {
 		})
 	}
 }
-
-// knownStaleKeys lists struct-tag keys the checked-in generated code is
-// known to drop. Remove an entry once `go generate ./pkg/types` is re-run;
-// the test then guards against regressions for that key too.
-var knownStaleKeys = map[string]bool{"marks_per_s": true}
 
 func diffKeys(got, want []string) (missing, extra []string) {
 	g, w := map[string]bool{}, map[string]bool{}
@@ -122,8 +113,8 @@ func diffKeys(got, want []string) (missing, extra []string) {
 	return missing, extra
 }
 
-// MarksPerS is tagged json:"marks_per_s" but the generated easyjson code
-// predates the field, so it is neither encoded nor decoded.
+// MarksPerS was once missing from the generated easyjson code; guard the
+// round trip so a stale types_easyjson.go is caught.
 func TestMarksPerSSerialized(t *testing.T) {
 	b, err := CakeStats{MarksPerS: 2.5}.MarshalJSON()
 	if err != nil {
@@ -134,9 +125,6 @@ func TestMarksPerSSerialized(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(b), `"marks_per_s":2.5`) || out.MarksPerS != 2.5 {
-		if knownStaleKeys["marks_per_s"] {
-			t.Skip("KNOWN BUG: types_easyjson.go is stale and drops marks_per_s; regenerate with easyjson")
-		}
 		t.Errorf("marks_per_s not round-tripped: encoded %s, decoded %v", b, out.MarksPerS)
 	}
 }

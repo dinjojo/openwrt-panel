@@ -10,8 +10,8 @@ package server
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/galpt/cake-stats/pkg/vm"
@@ -215,8 +215,19 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, w trendWi
 		return m
 	}
 	p99By, p50By, p95By, cntBy := norm(p99s), norm(p50s), norm(p95s), norm(counts)
-	for name, pt := range p95By {
-		tp := TrendPair{Name: name, P95: pt.Val}
+	// A target present in any of the four answers gets a row; missing
+	// quantiles stay zero rather than dropping the target entirely.
+	names := map[string]struct{}{}
+	for _, m := range []map[string]vm.Point{p99By, p95By, p50By, cntBy} {
+		for name := range m {
+			names[name] = struct{}{}
+		}
+	}
+	for name := range names {
+		tp := TrendPair{Name: name}
+		if v, ok := p95By[name]; ok {
+			tp.P95 = v.Val
+		}
 		if v, ok := p50By[name]; ok {
 			tp.P50 = v.Val
 		}
@@ -389,10 +400,18 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, w trendWi
 			// percentile of the sorted values.
 			wt.P95 = percentile(sorted, 5)
 			wt.Samples = len(sorted)
+			// A MAC seen on several bands contributes several series, so
+			// the denominator scales with the series count; clamp anyway
+			// because VM can return a point or two more than the nominal
+			// window holds.
+			present := 100 * float64(len(d.vals)) / (float64(d.series) * w.expectedSamples())
+			if present > 100 {
+				present = 100
+			}
 			wd := WifiDeviceTrend{
 				Name: d.name, MAC: d.mac, Band: d.band,
 				SignalP50: wt.P50, SignalP95: wt.P95,
-				PresentPct: 100 * float64(len(d.vals)) / float64(float64(d.series)*w.expectedSamples()),
+				PresentPct: present,
 			}
 			if len(d.link) > 0 {
 				wd.LinkP95 = percentile(d.link, 95)

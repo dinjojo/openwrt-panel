@@ -20,6 +20,8 @@ func TestDiffRate(t *testing.T) {
 		{"fractional", 101, 100, 4, 0.25},
 		{"counter reset clamps to zero", 5, 1000, 30, 0},
 		{"from zero", 30, 0, 30, 1},
+		{"drop by one is a reset, not a uint64 wrap", 999, 1000, 30, 0},
+		{"reset from near max", 0, math.MaxUint64, 30, 0},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

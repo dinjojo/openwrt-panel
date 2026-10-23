@@ -107,8 +107,7 @@ func TestEvalWANLatency(t *testing.T) {
 	}{
 		{"query error", &fakeVM{fail: map[string]bool{rtt: true}},
 			want{state: StateUnknown, value: "—", contains: []string{"ping query failed"}}},
-		// KNOWN BUG: this warn verdict carries NumState 0.
-		{"no ping data", &fakeVM{}, want{state: StateWarn, value: "—", contains: []string{"collectd"}, numStateBug: true}},
+		{"no ping data", &fakeVM{}, want{state: StateWarn, value: "—", contains: []string{"collectd"}}},
 		{"healthy", &fakeVM{data: map[string][]sample{rtt: pings(10, 20), loss: v(0)}},
 			want{state: StateOK, value: "15.0 ms avg", contains: []string{"20.0 ms to 8.8.8.8, 0.0% loss"}}},
 		{"slow host warns", &fakeVM{data: map[string][]sample{rtt: pings(10, 60)}},

@@ -58,7 +58,7 @@ func evalClock(st sysmon.ClockState) Check {
 	name := "Clock sync"
 	minor := true // clock drift is cosmetic at these thresholds — pill only
 	if !st.Available {
-		return Check{Name: name, State: StateUnknown, Value: "—", Minor: minor,
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Minor: minor,
 			Detail: "couldn't reach any time reference (NTP servers or HTTP endpoints) to measure clock drift"}
 	}
 	off := st.OffsetMs
@@ -94,7 +94,7 @@ func evalClock(st sysmon.ClockState) Check {
 func evalStorage(st sysmon.DiskState) Check {
 	name := "Storage & uptime"
 	if !st.Available {
-		return Check{Name: name, State: StateUnknown, Value: "—",
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1,
 			Detail: "smartmontools is not reporting for the NVMe — install it or check the device path"}
 	}
 
@@ -104,7 +104,13 @@ func evalStorage(st sysmon.DiskState) Check {
 	}
 
 	val := fmt.Sprintf("up %s", trimAge(time.Since(time.Now().Add(-time.Duration(uptimeSeconds()*float64(time.Second))))))
-	bad := st.CriticalWarning != 0 || st.AvailableSpare < 10
+	// DiskState cannot distinguish an absent available_spare field from a
+	// reported 0, so a zero spare with a clean critical_warning is treated
+	// as "not reported": per the NVMe spec, a drive whose spare has truly
+	// fallen below its threshold sets critical_warning bit 0, so a genuine
+	// 0% spare still lands in the critical branch below.
+	spareKnown := st.AvailableSpare != 0 || st.CriticalWarning != 0
+	bad := st.CriticalWarning != 0 || (spareKnown && st.AvailableSpare < 10)
 	if bad {
 		return Check{Name: name, State: StateCrit, Value: val,
 			Detail: fmt.Sprintf("the NVMe holding the monitoring data reports a critical condition (critical_warning=%d, spare %.0f%%) — replace it before it dies and takes the history with it.%s", st.CriticalWarning, st.AvailableSpare, extra), NumState: 2}
@@ -116,6 +122,10 @@ func evalStorage(st sysmon.DiskState) Check {
 	if st.PercentUsed >= 90 {
 		return Check{Name: name, State: StateWarn, Value: val,
 			Detail: fmt.Sprintf("the NVMe has used %.0f%% of its rated write endurance. Fine for now, but plan a replacement.%s", st.PercentUsed, extra), NumState: 1}
+	}
+	if !spareKnown {
+		return Check{Name: name, State: StateUnknown, Value: val,
+			Detail: fmt.Sprintf("the NVMe did not report its available spare, so its health can't be fully judged: %.0f%% write endurance used, no media errors, %.0f°C.%s%s", st.PercentUsed, st.TempC, extraStorageNotes(st), extra), NumState: -1}
 	}
 	return Check{Name: name, State: StateOK, Value: val,
 		Detail: fmt.Sprintf("NVMe holding the monitoring data is healthy: %.0f%% write endurance used, no media errors, %.0f°C.%s%s", st.PercentUsed, st.TempC, extraStorageNotes(st), extra), NumState: 0}
@@ -179,7 +189,7 @@ func trimAge(d time.Duration) string {
 func evalWANRejects(st sysmon.FWState) Check {
 	name := "Unsolicited inbound"
 	if !st.Available {
-		return Check{Name: name, State: StateUnknown, Value: "—",
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1,
 			Detail: "the firewall counters for unsolicited WAN traffic are missing — the cake-stats nftables include may have been removed"}
 	}
 	rate := st.InDropsPerMin + st.FwdDropsPerMin

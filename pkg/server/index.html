@@ -2975,6 +2975,8 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       // ── Bufferbloat grade history ────────────────────────────────────
       const bh = document.getElementById('tr-bloat');
       if (bh) {
+        // Bloat is often sub-millisecond: toFixed(0) would render every day as "+0 ms".
+        const fmtBloatMs = v => v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
         let html = '';
         [['down', 'Download'], ['up', 'Upload']].forEach(([k, label]) => {
           const days = (t.bloat && t.bloat[k]) || [];
@@ -2985,7 +2987,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
             html += '<div class="lrow" style="display:flex;gap:10px;align-items:baseline;padding:4px 0">' +
               '<span class="t num" style="min-width:5.5rem">' + day.day.slice(5) + '</span>' +
               '<span class="num strong" style="min-width:3rem;color:' + gradeColor(g) + '">' + h(g) + '</span>' +
-              '<span class="s num">+' + day.max_ms.toFixed(0) + ' ms peak &middot; ' + day.avg_ms.toFixed(0) + ' ms avg &middot; ' + day.runs + ' run' + (day.runs === 1 ? '' : 's') + '</span></div>';
+              '<span class="s num">+' + fmtBloatMs(day.max_ms) + ' ms peak &middot; ' + fmtBloatMs(day.avg_ms) + ' ms avg &middot; ' + day.runs + ' run' + (day.runs === 1 ? '' : 's') + '</span></div>';
           });
         });
         bh.innerHTML = html || '<p class="note">No probe history yet — grades appear after the hourly probe has run (11:00–20:00).</p>';

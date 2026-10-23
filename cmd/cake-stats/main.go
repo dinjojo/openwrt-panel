@@ -70,7 +70,10 @@ func main() {
 		} else {
 			explicit := map[string]bool{}
 			flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
-			for _, e := range []struct{ key, flag string; val *string }{
+			for _, e := range []struct {
+				key, flag string
+				val       *string
+			}{
 				{"ORBI_URL", "orbi-url", orbiURL},
 				{"ORBI_USER", "orbi-user", orbiUser},
 				{"ORBI_PASS", "orbi-pass", orbiPass},

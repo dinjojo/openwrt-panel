@@ -760,6 +760,12 @@ func easyjson6601e8cdDecodeGithubComGalptCakeStatsPkgTypes3(in *jlexer.Lexer, ou
 			} else {
 				out.DropsPerS = float64(in.Float64())
 			}
+		case "marks_per_s":
+			if in.IsNull() {
+				in.Skip()
+			} else {
+				out.MarksPerS = float64(in.Float64())
+			}
 		case "max_av_delay_ms":
 			if in.IsNull() {
 				in.Skip()
@@ -966,6 +972,11 @@ func easyjson6601e8cdEncodeGithubComGalptCakeStatsPkgTypes3(out *jwriter.Writer,
 		const prefix string = ",\"drops_per_s\":"
 		out.RawString(prefix)
 		out.Float64(float64(in.DropsPerS))
+	}
+	{
+		const prefix string = ",\"marks_per_s\":"
+		out.RawString(prefix)
+		out.Float64(float64(in.MarksPerS))
 	}
 	{
 		const prefix string = ",\"max_av_delay_ms\":"

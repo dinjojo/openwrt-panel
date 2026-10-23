@@ -19,21 +19,21 @@ import (
 
 // ConnState is the latest conntrack snapshot.
 type ConnState struct {
-	Count            int64     // entries in use
-	Max              int64     // table capacity
-	Util             float64   // count/max * 100
-	DropRate         float64   // drop + early_drop per second (real exhaustion)
-	InsertFailedRate float64   // insert_failed per second (clash races, warn only)
+	Count            int64   // entries in use
+	Max              int64   // table capacity
+	Util             float64 // count/max * 100
+	DropRate         float64 // drop + early_drop per second (real exhaustion)
+	InsertFailedRate float64 // insert_failed per second (clash races, warn only)
 	At               time.Time
 }
 
 // ConnPoller refreshes the conntrack snapshot every 30 seconds.
 type ConnPoller struct {
-	mu        sync.RWMutex
-	st        ConnState
-	prevDrop  uint64
-	prevFail  uint64
-	prevOK    bool
+	mu       sync.RWMutex
+	st       ConnState
+	prevDrop uint64
+	prevFail uint64
+	prevOK   bool
 }
 
 // NewConntrack starts the poller with a synchronous first snapshot.

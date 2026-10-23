@@ -27,16 +27,16 @@ import (
 
 // WarpState is the latest WARP tunnel snapshot from `wg show wg0 dump`.
 type WarpState struct {
-	Available bool      // wg0 exists and wg answered for it
-	PeerCount int       // configured peers (1 for this WARP setup)
-	Endpoint  string    // remote peer endpoint, e.g. 162.159.192.1:2408
-	Handshake time.Time // zero if the peer never completed a handshake
-	RxBytes   uint64
-	TxBytes   uint64
-	RxPerS    float64 // bytes/s, computed by diffing consecutive polls
-	TxPerS    float64
-	RatesKnown bool  // false until a second poll exists to diff against
-	At        time.Time
+	Available  bool      // wg0 exists and wg answered for it
+	PeerCount  int       // configured peers (1 for this WARP setup)
+	Endpoint   string    // remote peer endpoint, e.g. 162.159.192.1:2408
+	Handshake  time.Time // zero if the peer never completed a handshake
+	RxBytes    uint64
+	TxBytes    uint64
+	RxPerS     float64 // bytes/s, computed by diffing consecutive polls
+	TxPerS     float64
+	RatesKnown bool // false until a second poll exists to diff against
+	At         time.Time
 }
 
 // WarpPoller refreshes the tunnel snapshot every 10 seconds. Rates are
@@ -118,8 +118,10 @@ func (p *WarpPoller) refresh() {
 				elapsed = st.At.Sub(p.state.At).Seconds()
 			}
 			if elapsed > 0 {
-				st.RxPerS = float64(st.RxBytes-p.prevRx) / elapsed
-				st.TxPerS = float64(st.TxBytes-p.prevTx) / elapsed
+				// diffRate yields 0 when a counter goes backwards (wg
+				// restart / peer re-added) instead of wrapping the uint64.
+				st.RxPerS = diffRate(st.RxBytes, p.prevRx, elapsed)
+				st.TxPerS = diffRate(st.TxBytes, p.prevTx, elapsed)
 				st.RatesKnown = true
 			}
 		}
@@ -550,17 +552,13 @@ func (p *FWPoller) refresh() {
 			elapsed = st.At.Sub(p.state.At).Seconds()
 		}
 		if elapsed > 0 {
-			// Counters reset to zero on firewall reloads — clamp negatives.
-			dIn := float64(st.TotalIn - p.prevIn)
-			if dIn < 0 {
-				dIn = 0
-			}
-			dFw := float64(st.TotalFwd - p.prevFw)
-			if dFw < 0 {
-				dFw = 0
-			}
-			st.InDropsPerMin = dIn / elapsed * 60
-			st.FwdDropsPerMin = dFw / elapsed * 60
+			// Counters reset to zero on firewall reloads. Compare as
+			// unsigned before subtracting (diffRate): subtracting first
+			// wraps the uint64 to ~1.8e19 and a float clamp never fires.
+			// A reset interval reads as 0; the new counter becomes the
+			// baseline below.
+			st.InDropsPerMin = diffRate(st.TotalIn, p.prevIn, elapsed) * 60
+			st.FwdDropsPerMin = diffRate(st.TotalFwd, p.prevFw, elapsed) * 60
 			p.hist = append(p.hist, st.InDropsPerMin+st.FwdDropsPerMin)
 			if len(p.hist) > fwHistCap {
 				p.hist = p.hist[len(p.hist)-fwHistCap:]

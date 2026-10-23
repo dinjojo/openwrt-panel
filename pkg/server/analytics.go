@@ -62,12 +62,12 @@ type PercentilePair struct {
 
 func (s *Server) handleAPIPercentiles(c fiber.Ctx) error {
 	if s.vmc == nil {
-		return c.Status(503).SendString(`{"error":"victoriametrics not configured"}`)
+		return c.Status(503).JSON(fiber.Map{"error": "victoriametrics not configured"})
 	}
 	rng := c.Query("range", "24h")
 	w, werr := parseTrendWindow(rng, c.Query("start"), c.Query("end"), time.Now().Unix())
 	if werr != nil {
-		return c.Status(400).SendString(`{"error":"` + werr.Error() + `"}`)
+		return c.Status(400).JSON(fiber.Map{"error": werr.Error()})
 	}
 	end := w.End
 	start := w.Start

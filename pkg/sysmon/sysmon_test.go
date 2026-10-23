@@ -116,6 +116,51 @@ func TestWarpRefreshComputesRates(t *testing.T) {
 	}
 }
 
+// A wg restart zeroes the peer counters. The interval spanning the restart
+// must read as rate 0 (not a ~1.8e18 B/s uint64 wrap), and the new counter
+// becomes the baseline so the following interval is sane again.
+func TestWarpRefreshCounterReset(t *testing.T) {
+	cases := []struct {
+		name               string
+		rx1, tx1, rx2, tx2 uint64
+		wantRx, wantTx     float64 // per second over 10 s
+	}{
+		{"normal increment", 1000, 2000, 1000 + 10_240, 2000 + 1_024, 1024, 102.4},
+		{"both counters reset", 5_000_000, 6_000_000, 100, 50, 0, 0},
+		{"rx reset only", 5_000_000, 2000, 100, 2000 + 1_000, 0, 100},
+		{"drop by one", 1001, 1001, 1000, 1000, 0, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := fakeBin(t, "wg", `cat "$(dirname "$0")/dump"`+"\n")
+			hs := time.Now().Unix()
+			writeFile(t, filepath.Join(dir, "dump"), wgDump(hs, c.rx1, c.tx1))
+			p := &WarpPoller{}
+			p.refresh()
+
+			p.state.At = time.Now().Add(-10 * time.Second)
+			writeFile(t, filepath.Join(dir, "dump"), wgDump(hs, c.rx2, c.tx2))
+			p.refresh()
+			st := p.Snapshot()
+			if !st.RatesKnown {
+				t.Fatal("RatesKnown false after second poll")
+			}
+			if math.Abs(st.RxPerS-c.wantRx) > c.wantRx*0.02+1e-9 || math.Abs(st.TxPerS-c.wantTx) > c.wantTx*0.02+1e-9 {
+				t.Errorf("rates rx=%v tx=%v, want ~%v ~%v", st.RxPerS, st.TxPerS, c.wantRx, c.wantTx)
+			}
+
+			// Next interval diffs against the post-reset counters.
+			p.state.At = time.Now().Add(-10 * time.Second)
+			writeFile(t, filepath.Join(dir, "dump"), wgDump(hs, c.rx2+10_000, c.tx2+1_000))
+			p.refresh()
+			st = p.Snapshot()
+			if math.Abs(st.RxPerS-1000) > 20 || math.Abs(st.TxPerS-100) > 2 {
+				t.Errorf("post-reset rates rx=%v tx=%v, want ~1000 ~100", st.RxPerS, st.TxPerS)
+			}
+		})
+	}
+}
+
 // ---------- Firewall counters ----------
 
 const nftScript = `d="$(dirname "$0")"
@@ -221,6 +266,57 @@ func TestFWRefresh(t *testing.T) {
 			t.Error("History leaked internal slice")
 		}
 	})
+
+	// A firewall reload zeroes the nft counters. The reload interval must
+	// read as 0 drops/min (not a ~3.7e19 uint64 wrap that would trigger a
+	// false "flooding" alert and poison the median baseline), and the new
+	// counters become the baseline for the next interval.
+	resetCases := []struct {
+		name            string
+		in1, rej1, fwd1 uint64
+		in2, rej2, fwd2 uint64
+		wantIn, wantFwd float64
+	}{
+		{"normal increment", 1000, 500, 200, 1030, 515, 215, 90, 30},
+		{"full reload resets all", 1_000_000, 500_000, 200_000, 3, 2, 1, 0, 0},
+		{"inbound reset, forward grows", 1_000_000, 500_000, 200, 3, 2, 215, 0, 30},
+		{"drop by one", 1000, 500, 200, 999, 500, 199, 0, 0},
+	}
+	for _, c := range resetCases {
+		t.Run("reset/"+c.name, func(t *testing.T) {
+			dir := fakeBin(t, "nft", nftScript)
+			writeFW(t, dir, c.in1, c.rej1, c.fwd1)
+			p := &FWPoller{}
+			p.refresh()
+
+			p.state.At = time.Now().Add(-30 * time.Second)
+			writeFW(t, dir, c.in2, c.rej2, c.fwd2)
+			p.refresh()
+			st := p.Snapshot()
+			if math.Abs(st.InDropsPerMin-c.wantIn) > c.wantIn*0.02+1e-9 || math.Abs(st.FwdDropsPerMin-c.wantFwd) > c.wantFwd*0.02+1e-9 {
+				t.Errorf("rates in=%v fwd=%v, want ~%v ~%v", st.InDropsPerMin, st.FwdDropsPerMin, c.wantIn, c.wantFwd)
+			}
+			h := p.History()
+			if len(h) != 1 || math.Abs(h[0]-(c.wantIn+c.wantFwd)) > (c.wantIn+c.wantFwd)*0.02+1e-9 {
+				t.Errorf("history=%v, want one sample ~%v", h, c.wantIn+c.wantFwd)
+			}
+			if st.Median > 1e6 {
+				t.Errorf("median poisoned: %v", st.Median)
+			}
+
+			// Next interval diffs against the post-reload counters: +30 in, +15 fwd over 30 s.
+			p.state.At = time.Now().Add(-30 * time.Second)
+			writeFW(t, dir, c.in2+20, c.rej2+10, c.fwd2+15)
+			p.refresh()
+			st = p.Snapshot()
+			if math.Abs(st.InDropsPerMin-60) > 1 || math.Abs(st.FwdDropsPerMin-30) > 1 {
+				t.Errorf("post-reset rates in=%v fwd=%v, want ~60 ~30", st.InDropsPerMin, st.FwdDropsPerMin)
+			}
+			if h := p.History(); len(h) != 2 {
+				t.Errorf("history len = %d, want 2", len(h))
+			}
+		})
+	}
 
 	t.Run("history is capped", func(t *testing.T) {
 		dir := fakeBin(t, "nft", nftScript)

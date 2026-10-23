@@ -87,6 +87,11 @@ func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *
 	if op.Enabled() {
 		checks = append(checks, evalOrbi(op), evalWifiSignal(op))
 	}
+	// NumState is derived from State by definition; enforce it here so a
+	// literal that forgets (or mistypes) the field can never disagree.
+	for i := range checks {
+		checks[i].NumState = numState(checks[i].State)
+	}
 	return checks
 }
 
@@ -135,7 +140,7 @@ func connSnap(sys *sysmon.Pollers) sysmon.ConnState {
 func evalConntrack(st sysmon.ConnState) Check {
 	name := "Connection table"
 	if st.Max == 0 {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "conntrack table size unavailable on this kernel"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "conntrack table size unavailable on this kernel"}
 	}
 	val := fmt.Sprintf("%d/%d (%.0f%%)", st.Count, st.Max, st.Util)
 	switch {
@@ -190,17 +195,31 @@ func shapedBits(s string) float64 {
 	return ShapedBits(s)
 }
 
+// tcRateRe matches a tc rate: number, optional SI prefix, unit. tc accepts
+// the prefix in either case ("Kbit"/"kbit", "Mbps"/"mbps").
+var tcRateRe = regexp.MustCompile(`^([\d.]+)([KkMmGgTt])?(bit|bps)`)
+
+// tcRatePrefix maps a (lower-cased) SI prefix to its multiplier.
+var tcRatePrefix = map[string]float64{"": 1, "k": 1e3, "m": 1e6, "g": 1e9, "t": 1e12}
+
 // ShapedBits parses a tc bandwidth string into bits/s (exported for the
 // server package, which reports provisioned capacity in the WAN strip).
+// In tc(8) units "bit" is bits per second but "bps" is BYTES per second,
+// so "bps" rates are multiplied by 8.
 func ShapedBits(s string) float64 {
-	m := regexp.MustCompile(`^([\d.]+)([KMGT])?(bit|bps)`)
-	fields := m.FindStringSubmatch(strings.TrimSpace(s))
+	fields := tcRateRe.FindStringSubmatch(strings.TrimSpace(s))
 	if fields == nil {
 		return 0
 	}
-	mult := map[string]float64{"": 1, "K": 1e3, "M": 1e6, "G": 1e9, "T": 1e12}[fields[2]]
-	v, _ := strconv.ParseFloat(fields[1], 64)
-	return v * mult
+	v, err := strconv.ParseFloat(fields[1], 64)
+	if err != nil {
+		return 0
+	}
+	v *= tcRatePrefix[strings.ToLower(fields[2])]
+	if fields[3] == "bps" {
+		v *= 8
+	}
+	return v
 }
 
 // evalDrops interprets packet drops and ECN marks with their circumstances.
@@ -211,7 +230,7 @@ func ShapedBits(s string) float64 {
 func evalDrops(live []types.CakeStats) Check {
 	name := "Packet drops"
 	if len(live) == 0 {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "no CAKE interfaces to check"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "no CAKE interfaces to check"}
 	}
 
 	worstDrops := 0.0
@@ -280,11 +299,11 @@ func evalDrops(live []types.CakeStats) Check {
 func evalCPU(ctx context.Context, client *vm.Client, live []types.CakeStats) Check {
 	name := "Router CPU"
 	if client == nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "VictoriaMetrics not configured"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "VictoriaMetrics not configured"}
 	}
 	pts, err := client.Query(ctx, `100 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100`)
 	if err != nil || len(pts) == 0 {
-		return Check{Name: name, State: StateUnknown, Value: "—",
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1,
 			Detail: "no CPU data — is node-exporter running?"}
 	}
 	cpu := pts[0].Val
@@ -320,7 +339,7 @@ func evalCPU(ctx context.Context, client *vm.Client, live []types.CakeStats) Che
 func evalClients(store *clients.Store) Check {
 	name := "Device tracking"
 	if store == nil || !store.Available() {
-		return Check{Name: name, State: StateWarn, Value: "off",
+		return Check{Name: name, State: StateWarn, Value: "off", NumState: 1,
 			Detail: "per-client accounting unavailable — is nlbwmon installed and running?"}
 	}
 	snap := store.Snapshot()
@@ -333,7 +352,7 @@ func evalClients(store *clients.Store) Check {
 	val := fmt.Sprintf("%d online", online)
 	detail := fmt.Sprintf("%d devices tracked by nlbwmon (per-client accounting active)", len(snap))
 	if online == 0 && len(snap) > 0 {
-		return Check{Name: name, State: StateWarn, Value: "0 online",
+		return Check{Name: name, State: StateWarn, Value: "0 online", NumState: 1,
 			Detail: fmt.Sprintf("%d devices tracked but none reachable — check LAN/WiFi", len(snap))}
 	}
 	return Check{Name: name, State: StateOK, Value: val, Detail: detail, NumState: 0}
@@ -402,7 +421,7 @@ func gradeFromSeries(series []vm.Series) string {
 func evalBufferbloat(ctx context.Context, client *vm.Client, live []types.CakeStats) Check {
 	name := "Latency under load"
 	if client == nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "VictoriaMetrics not configured"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "VictoriaMetrics not configured"}
 	}
 
 	// Find the newest probe result with its real sample time (raw samples,
@@ -413,7 +432,7 @@ func evalBufferbloat(ctx context.Context, client *vm.Client, live []types.CakeSt
 	end := now.Unix()
 	down, err := client.QueryRaw(ctx, `probe_bloat_ms{direction="down"}`, end-int64(probeLookback/time.Second), end)
 	if err != nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "probe query failed: " + err.Error()}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "probe query failed: " + err.Error()}
 	}
 	dBloat, dTS, ok := latestFromSeries(down)
 	if f := classifyProbe(now, dTS, ok); f != probeFresh {
@@ -491,16 +510,16 @@ func evalBufferbloat(ctx context.Context, client *vm.Client, live []types.CakeSt
 func evalWANLatency(ctx context.Context, client *vm.Client) Check {
 	name := "Internet response time"
 	if client == nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "VictoriaMetrics not configured"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "VictoriaMetrics not configured"}
 	}
 	rtts, err := client.Query(ctx, `collectd_ping`)
 	if err != nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "ping query failed: " + err.Error()}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "ping query failed: " + err.Error()}
 	}
 	losses, _ := client.Query(ctx, `collectd_ping_ping_droprate`)
 
 	if len(rtts) == 0 {
-		return Check{Name: name, State: StateWarn, Value: "—", Detail: "no WAN latency data — is collectd ping plugin running?"}
+		return Check{Name: name, State: StateWarn, Value: "—", NumState: 1, Detail: "no WAN latency data — is collectd ping plugin running?"}
 	}
 
 	worstRTT := 0.0
@@ -564,13 +583,13 @@ func evalWANLatency(ctx context.Context, client *vm.Client) Check {
 func evalWANLink(ctx context.Context, client *vm.Client) Check {
 	name := "Internet line"
 	if client == nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "VictoriaMetrics not configured"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "VictoriaMetrics not configured"}
 	}
 	const wanDev = `device=~"(wan|pppoe|eth0).*"`
 	// Presence: is a WAN-facing interface reporting at all?
 	info, err := client.Query(ctx, `count(node_network_info{`+wanDev+`}) by (device)`)
 	if err != nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "WAN interface query failed: " + err.Error()}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "WAN interface query failed: " + err.Error()}
 	}
 	if len(info) == 0 {
 		return Check{Name: name, State: StateCrit, Value: "no WAN",
@@ -649,7 +668,7 @@ func median(v []float64) float64 {
 func evalQueue(live []types.CakeStats) Check {
 	name := "Traffic queue"
 	if len(live) == 0 {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "no CAKE interfaces"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "no CAKE interfaces"}
 	}
 	maxPk := 0.0
 	iface := ""
@@ -667,7 +686,18 @@ func evalQueue(live []types.CakeStats) Check {
 		state = StateWarn
 	}
 	val := fmt.Sprintf("peak %.2f ms", maxPk)
-	detail := fmt.Sprintf("packets wait at most %.2f ms in the queue on %s — well under the 5 ms target, no bufferbloat", maxPk, iface)
+	var detail string
+	if iface == "" {
+		// Every interface reports a zero peak delay, so none was picked
+		// as the worst; name them all rather than leaving a blank.
+		names := make([]string, 0, len(live))
+		for _, cs := range live {
+			names = append(names, cs.Interface)
+		}
+		detail = fmt.Sprintf("packets are not waiting in the queue at all on %s — well under the 5 ms target, no bufferbloat", strings.Join(names, ", "))
+	} else {
+		detail = fmt.Sprintf("packets wait at most %.2f ms in the queue on %s — well under the 5 ms target, no bufferbloat", maxPk, iface)
+	}
 	if state == StateWarn {
 		detail = fmt.Sprintf("packets wait up to %.2f ms in the queue on %s — above the 5 ms target, so video calls may feel laggy while the line is busy", maxPk, iface)
 	} else if state == StateCrit {
@@ -680,11 +710,11 @@ func evalQueue(live []types.CakeStats) Check {
 func evalSystem(ctx context.Context, client *vm.Client) Check {
 	name := "Temperature & memory"
 	if client == nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "VictoriaMetrics not configured"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "VictoriaMetrics not configured"}
 	}
 	temps, err := client.Query(ctx, `max(collectd_thermal_temperature)`)
 	if err != nil {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "thermal query failed: " + err.Error()}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "thermal query failed: " + err.Error()}
 	}
 	loadPts, _ := client.Query(ctx, `node_load1`)
 	memPts, _ := client.Query(ctx, `100 * node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes`)

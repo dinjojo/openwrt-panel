@@ -174,15 +174,55 @@ func TestNewLoadsAndCompactsHistory(t *testing.T) {
 		{At: now - 20000, Kind: "warp", Sev: "warn", Msg: "down", Count: 1}, // too far apart
 		{At: now - 30000, Kind: "reboot", Sev: "warn", Msg: "router rebooted"},
 	}
-	got := summarize(New(seedFile(t, seed)).List(100))
+	loaded := New(seedFile(t, seed)).List(100)
+	got := summarize(loaded)
+	// Merged entries keep the newest occurrence's message, as Add does.
 	want := []summary{
-		{"monitor", "info", "started v1", 7},
+		{"monitor", "info", "started v3", 7},
 		{"warp", "warn", "down", 3},
 		{"warp", "warn", "down", 1},
 		{"reboot", "warn", "router rebooted", 1},
 	}
 	if !equalSummaries(got, want) {
-		t.Errorf("loaded = %+v, want %+v", got, want)
+		t.Fatalf("loaded = %+v, want %+v", got, want)
+	}
+	// ...and the newest occurrence's time, so the feed shows when it last
+	// happened and the flap window keeps running from there.
+	wantAt := []int64{now - 10, now - 9100, now - 20000, now - 30000}
+	for i, at := range wantAt {
+		if loaded[i].At != at {
+			t.Errorf("loaded[%d].At = now%+d, want now%+d", i, loaded[i].At-now, at-now)
+		}
+	}
+}
+
+func TestReloadedFlapKeepsMerging(t *testing.T) {
+	// A flap run as Add persists it: one counted entry stamped with the
+	// latest occurrence. Reloading must neither move its time back nor
+	// break the next merge.
+	now := time.Now().Unix()
+	seed := []Event{
+		{At: now - 30, Kind: "warp", Sev: "warn", Msg: "down", Count: 3},
+		{At: now - 500, Kind: "warp", Sev: "warn", Msg: "down", Count: 1},  // adjacent, within window
+		{At: now - 1050, Kind: "warp", Sev: "warn", Msg: "down", Count: 1}, // 550s after the previous one
+	}
+	path := seedFile(t, seed)
+	s := New(path)
+	got := s.List(10)
+	if len(got) != 1 || got[0].Count != 5 || got[0].At != now-30 {
+		t.Fatalf("loaded = %+v, want one entry Count 5 At now-30", got)
+	}
+	if again := New(path).List(10); len(again) != 1 || again[0] != got[0] {
+		// path was not rewritten yet; reload of the same file is stable
+		t.Errorf("second load = %+v, want %+v", again, got)
+	}
+	s.Add("warp", "warn", "down")
+	got = s.List(10)
+	if len(got) != 1 || got[0].Count != 6 || got[0].At < now {
+		t.Fatalf("after Add = %+v, want one entry Count 6 stamped now", got)
+	}
+	if reloaded := New(path).List(10); len(reloaded) != 1 || reloaded[0] != got[0] {
+		t.Errorf("after restart = %+v, want %+v", reloaded, got)
 	}
 }
 
@@ -278,7 +318,7 @@ func TestCountSince(t *testing.T) {
 		want  int
 	}{
 		{"wan", now - 86400, 2},
-		{"wan", now - 7 * 86400, 3},
+		{"wan", now - 7*86400, 3},
 		{"wan", now - 7200, 2}, // boundary is inclusive
 		{"warp", now - 86400, 1},
 		{"reboot", 0, 0},

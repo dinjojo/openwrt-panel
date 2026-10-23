@@ -215,6 +215,18 @@ func (s *Store) poll() error {
 		// Keep lastSeen across overwrites (client is a fresh struct only once).
 	}
 
+	// Devices absent from this (successful) poll are gone: mark them offline
+	// and clear their live figures, but keep totals/name/vendor/LastSeen so
+	// the table retains their history.
+	for mac, c := range s.clients {
+		if _, present := samples[mac]; present {
+			continue
+		}
+		c.Online = false
+		c.RxRate, c.TxRate = 0, 0
+		c.Conns = 0
+	}
+
 	// Retain lastSeen values: rebuild map of previous samples for next round.
 	s.prev = samples
 	s.prevAt = now

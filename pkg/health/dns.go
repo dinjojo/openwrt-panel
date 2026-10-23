@@ -106,7 +106,7 @@ func humanUp(d time.Duration) string {
 func evalPPPoE(snap wan.State) Check {
 	name := "ISP session"
 	if !snap.Available {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "cannot read PPPoE state (ubus unavailable)"}
+		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1, Detail: "cannot read PPPoE state (ubus unavailable)"}
 	}
 	if !snap.Up {
 		return Check{Name: name, State: StateCrit, Value: "down",

@@ -229,6 +229,9 @@ func TestDurStr(t *testing.T) {
 		25 * 3600: "25h",
 		5400:      "1h30m",
 		3660:      "1h1m",
+		3601:      "1h1s",
+		3661:      "1h1m1s",
+		5430:      "1h30m30s",
 	}
 	for sec, want := range cases {
 		if got := durStr(sec); got != want {
@@ -437,6 +440,73 @@ func TestAddTrends(t *testing.T) {
 	}
 }
 
+func TestAddTrendsLatencyUnion(t *testing.T) {
+	const end = int64(1766000000)
+	w := trendWindow{Label: "24h", Start: end - 86400, End: end}
+	q := func(format string) string { return fmt.Sprintf(format, w.sel()) }
+	f := newFakeVM()
+	// "only99" has no p95 answer, the default (empty-label) target only a
+	// count; both must still get a row.
+	f.instant[q(`quantile_over_time(0.99, collectd_ping%s)`)] = []vmSeries{
+		inst(lbl("ping", "1.1.1.1"), 40), inst(lbl("ping", "only99"), 90)}
+	f.instant[q(`quantile_over_time(0.95, collectd_ping%s)`)] = []vmSeries{
+		inst(lbl("ping", "1.1.1.1"), 20)}
+	f.instant[q(`quantile_over_time(0.50, collectd_ping%s)`)] = []vmSeries{
+		inst(lbl("ping", "1.1.1.1"), 10)}
+	f.instant[q(`count_over_time(collectd_ping%s)`)] = []vmSeries{
+		inst(lbl("ping", "1.1.1.1"), 500), inst(nil, 300)}
+
+	s := newTrendServer(t, f)
+	var out PercentileReport
+	s.addTrends(context.Background(), &out, w)
+	want := []TrendPair{
+		{Name: "1.1.1.1", P50: 10, P95: 20, P99: 40, Samples: 500},
+		{Name: "wan", Samples: 300},
+		{Name: "only99", P99: 90},
+	}
+	got := out.Trends.Latency
+	if len(got) != len(want) {
+		t.Fatalf("Latency = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Latency[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestAddTrendsWifiPresentClamped(t *testing.T) {
+	const end = int64(1766000000)
+	// 2h window at a 120s step → 60 expected samples per series.
+	w := trendWindow{Label: "custom", Start: end - 7200, End: end}
+	f := newFakeVM()
+	over := make([]float64, 70) // more points than the window nominally holds
+	for i := range over {
+		over[i] = -50
+	}
+	half := make([]float64, 30)
+	for i := range half {
+		half[i] = -60
+	}
+	f.rng[`orbi_client_signal`] = []vmSeries{
+		matrix(lbl("mac", "aa", "name", "phone", "band", "5G"), nil, over...),
+		matrix(lbl("mac", "bb", "name", "tv", "band", "2.4G"), nil, half...),
+	}
+	s := newTrendServer(t, f)
+	var out PercentileReport
+	s.addTrends(context.Background(), &out, w)
+	devs := out.Trends.WifiDevices
+	if len(devs) != 2 {
+		t.Fatalf("WifiDevices = %+v", devs)
+	}
+	if devs[0].MAC != "aa" || devs[0].PresentPct != 100 {
+		t.Errorf("devs[0] = %+v, want aa clamped to 100%%", devs[0])
+	}
+	if devs[1].MAC != "bb" || !approx(devs[1].PresentPct, 50) {
+		t.Errorf("devs[1] = %+v, want bb at 50%%", devs[1])
+	}
+}
+
 func TestAddTrendsEmptyVM(t *testing.T) {
 	s := newTrendServer(t, newFakeVM())
 	var out PercentileReport
@@ -460,13 +530,19 @@ func TestAddTrendsEmptyVM(t *testing.T) {
 
 func getStatus(t *testing.T, s *Server, path string) (int, []byte) {
 	t.Helper()
+	status, _, b := getResp(t, s, path)
+	return status, b
+}
+
+func getResp(t *testing.T, s *Server, path string) (int, http.Header, []byte) {
+	t.Helper()
 	resp, err := s.app.Test(httptest.NewRequest("GET", path, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, b
+	return resp.StatusCode, resp.Header, b
 }
 
 func TestHandleAPIPercentilesTrends(t *testing.T) {
@@ -498,12 +574,15 @@ func TestHandleAPIPercentilesTrends(t *testing.T) {
 		{"bad start", "/api/percentiles?start=abc", 400, ""},
 	}
 	for _, c := range cases {
-		status, b := getStatus(t, s, c.path)
+		status, hdr, b := getResp(t, s, c.path)
 		if status != c.status {
 			t.Errorf("%s: HTTP %d, want %d (%s)", c.name, status, c.status, b)
 			continue
 		}
 		if status != 200 {
+			if ct := hdr.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Errorf("%s: Content-Type %q, want application/json", c.name, ct)
+			}
 			var e map[string]string
 			if err := json.Unmarshal(b, &e); err != nil || e["error"] == "" {
 				t.Errorf("%s: error body %s not JSON with error (%v)", c.name, b, err)
@@ -540,8 +619,15 @@ func TestHandleAPIPercentilesTrends(t *testing.T) {
 
 func TestHandleAPIPercentilesNoVM(t *testing.T) {
 	s := newTrendServer(t, nil)
-	status, b := getStatus(t, s, "/api/percentiles?range=24h")
+	status, hdr, b := getResp(t, s, "/api/percentiles?range=24h")
 	if status != 503 {
 		t.Errorf("HTTP %d (%s), want 503", status, b)
+	}
+	if ct := hdr.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type %q, want application/json", ct)
+	}
+	var e map[string]string
+	if err := json.Unmarshal(b, &e); err != nil || e["error"] != "victoriametrics not configured" {
+		t.Errorf("503 body %s (%v)", b, err)
 	}
 }

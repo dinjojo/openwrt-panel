@@ -104,8 +104,14 @@ func (s *Store) addLocked(kind, sev, msg string) {
 // collapse merges consecutive runs of the same event (monitor restarts,
 // identical flaps within ten minutes) into counted entries. Input and output
 // are newest-first.
+//
+// The merged entry mirrors what addLocked builds at runtime: it keeps the
+// newest occurrence's At/Sev/Msg and sums the counts. The ten-minute flap
+// window is measured between adjacent occurrences (as addLocked compares each
+// new event to the previous one), so a run reloads exactly as it was built.
 func collapse(events []Event) []Event {
 	var out []Event
+	var runOldest int64 // At of the oldest occurrence merged into out's last entry
 	for _, ev := range events {
 		if ev.Count < 1 {
 			ev.Count = 1 // entries written before counting existed
@@ -114,16 +120,15 @@ func collapse(events []Event) []Event {
 			last := &out[len(out)-1]
 			same := last.Kind == ev.Kind &&
 				(ev.Kind == "monitor" ||
-					(last.Sev == ev.Sev && last.Msg == ev.Msg && last.At-ev.At < 600))
+					(last.Sev == ev.Sev && last.Msg == ev.Msg && runOldest-ev.At < 600))
 			if same {
-				last.At = ev.At
-				last.Msg = ev.Msg
-				last.Sev = ev.Sev
 				last.Count += ev.Count
+				runOldest = ev.At
 				continue
 			}
 		}
 		out = append(out, ev)
+		runOldest = ev.At
 	}
 	return out
 }
