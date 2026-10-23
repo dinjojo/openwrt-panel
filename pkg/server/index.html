@@ -38,7 +38,7 @@
       --hair:    #d2cdc2;   /* row separators inside a section */
       --ink:     #1d1b17;   /* enamel text */
       --ink-2:   #4a463e;
-      --ink-3:   #645f55;
+      --ink-3:   #4f4a41;
       --accent:  #824e0e;   /* signal amber, text-safe on the light face */
       --accent-ink: #b06a1c;/* chart ink */
       --on-accent: #fbf7ef;
@@ -266,12 +266,14 @@
        seen devices) sits behind <details> disclosures. */
     #tab-trends .sect { --pad: var(--s4); padding: 10px var(--s4) 12px; border-top: 0; border-bottom: 1px solid var(--hair); }
     #tab-trends .sect:last-child { border-bottom: 0; }
-    #tab-trends .sect-head { margin-bottom: 4px; gap: var(--s2); }
-    #tab-trends .h2 { font-size: var(--t-2xs); font-weight: 650; color: var(--ink-2);
-      text-transform: uppercase; letter-spacing: 0.08em; }
-    #tab-trends .h2 .sub { font-size: var(--t-xs); margin-left: var(--s2); text-transform: none; letter-spacing: 0;
-      font-weight: 400; color: var(--ink-3); }
-    #tab-trends .note { font-size: var(--t-xs); color: var(--ink-3); }
+    #tab-trends .sect-head { margin-bottom: 4px; gap: var(--s2); display: block; }
+    #tab-trends .h2 { font-size: var(--t-sm); font-weight: 650; color: var(--ink); }
+    #tab-trends .h2 .sub { font-size: var(--t-xs); margin-left: var(--s2); font-weight: 400; color: var(--ink-2); }
+    #tab-trends .note { font-size: var(--t-xs); color: var(--ink-2); }
+    /* One-line plain-language verdict under each section head, lamp carrying state. */
+    .tr-verdict { font-size: var(--t-sm); color: var(--ink); margin: 0 0 6px; display: flex; align-items: baseline; gap: 6px; }
+    .tr-verdict .lamp { flex: none; }
+    .tr-verdict:empty { display: none; }
     .tr-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); flex-wrap: wrap;
       padding: 8px var(--s4); border-bottom: 1px solid var(--hair); }
     .tr-bar .h2 { white-space: nowrap; }
@@ -649,16 +651,19 @@
           <!-- Latency: per-target percentiles, jitter, latency under load -->
           <section class="sect">
             <div class="sect-head"><h2 class="h2">Latency</h2></div>
+            <p class="tr-verdict" id="tr-lat-verdict"></p>
             <div id="tr-lat-strip"></div>
           </section>
           <!-- Reliability ledger: loss and WAN session changes -->
           <section class="sect">
             <div class="sect-head"><h2 class="h2">Reliability</h2></div>
+            <p class="tr-verdict" id="tr-rel-verdict"></p>
             <div id="tr-rel-strip"></div>
           </section>
           <!-- Router headroom -->
           <section class="sect">
             <div class="sect-head"><h2 class="h2">Router headroom</h2></div>
+            <p class="tr-verdict" id="tr-head-verdict"></p>
             <div id="tr-head-strip"></div>
           </section>
         </div>
@@ -666,16 +671,19 @@
           <!-- Shaper & queue: down/up side by side -->
           <section class="sect">
             <div class="sect-head"><h2 class="h2">Shaper &amp; queue</h2></div>
+            <p class="tr-verdict" id="tr-shaper-verdict"></p>
             <div id="tr-shaper-strip"></div>
           </section>
           <!-- Wi-Fi quality: per-device signal, link and presence -->
           <section class="sect">
             <div class="sect-head"><h2 class="h2">Wi-Fi quality <span class="sub" id="tr-wifi-sub"></span></h2></div>
+            <p class="tr-verdict" id="tr-wifi-verdict"></p>
             <div id="tr-wifi-strip"></div>
           </section>
           <!-- Bufferbloat grade history: daily probe results, both directions -->
           <section class="sect">
             <div class="sect-head"><h2 class="h2">Bufferbloat grades</h2></div>
+            <p class="tr-verdict" id="tr-bloat-verdict"></p>
             <div id="tr-bloat"></div>
           </section>
         </div>
@@ -2973,6 +2981,85 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
         }
       }
       const winLabel = trendCustom ? 'custom window' : trendRange;
+
+      // ── Per-section verdicts: one plain-language line, lamp carries state ──
+      const verdict = (id, state, text) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = text ? lamp(state) + ' ' + text : '';
+      };
+      // Latency: does a full-rate download add latency over idle?
+      if (d.loaded) {
+        const delta = d.idle ? d.loaded.p95 - d.idle.p50 : null;
+        const st = delta == null ? 'ok' : delta < 5 ? 'ok' : delta < 30 ? 'warn' : 'crit';
+        verdict('tr-lat-verdict', st, delta == null || delta < 0.5
+          ? 'a full-rate download adds nothing — loaded p95 ' + d.loaded.p95.toFixed(1) + ' ms'
+          : 'a full-rate download adds +' + delta.toFixed(1) + ' ms — ' +
+            (st === 'ok' ? 'the shaper holds the line' : st === 'warn' ? 'some latency under load' : 'bufferbloat under load'));
+      } else verdict('tr-lat-verdict', '', '');
+      // Reliability: drops and loss in the window.
+      {
+        const lossP = d.loss ? d.loss.p95 * 100 : null;
+        const drops = t.wan_changes || 0;
+        const st = (drops === 0 && (lossP == null || lossP < 0.5)) ? 'ok' : (drops <= 2 && (lossP == null || lossP < 5)) ? 'warn' : 'crit';
+        verdict('tr-rel-verdict', st,
+          (drops === 0 ? 'no PPPoE drops' : drops + ' PPPoE drop' + (drops === 1 ? '' : 's')) +
+          (lossP != null ? ' · loss p95 ' + lossP.toFixed(2) + '%' : ''));
+      }
+      // Router headroom.
+      if (t.headroom) {
+        const st = (t.headroom.cpu_p95 < 80 && (!t.headroom.temp_max || t.headroom.temp_max < 85)) ? 'ok' : 'warn';
+        verdict('tr-head-verdict', st,
+          'CPU p95 ' + t.headroom.cpu_p95.toFixed(0) + '%' + (t.headroom.temp_max ? ' · peak ' + t.headroom.temp_max.toFixed(0) + '°C' : '') +
+          ' — ' + (st === 'ok' ? 'plenty of headroom' : 'running busy or hot'));
+      } else verdict('tr-head-verdict', '', '');
+      // Shaper & queue: worst delay and pinning across both directions.
+      {
+        const sv = k => { const s = t.shaper && t.shaper[k]; return s && s.ceiling_mbps > 0 ? s : null; };
+        const av = k => t.aqm && t.aqm[k];
+        let worstDelay = 0, target = 0, pinned = 0, any = false;
+        ['down', 'up'].forEach(k => {
+          const a = av(k); const s = sv(k);
+          if (a) { any = true; if (a.peak_delay_p95 > worstDelay) worstDelay = a.peak_delay_p95; if (a.target_ms > target) target = a.target_ms; }
+          if (s && s.pinned_pct > pinned) pinned = s.pinned_pct;
+        });
+        if (any) {
+          const st = (pinned < 0.1 && worstDelay <= target) ? 'ok' : 'warn';
+          verdict('tr-shaper-verdict', st,
+            'queue held — delay p95 ' + worstDelay.toFixed(2) + ' of ' + target.toFixed(1) + ' ms' +
+            (pinned >= 0.1 ? ', pinned ' + pinned.toFixed(1) + '% of the window' : ', never pinned'));
+        } else verdict('tr-shaper-verdict', '', '');
+      }
+      // Wi-Fi quality: weakest device over the window.
+      {
+        const devs = t.wifi_devices || [];
+        if (devs.length) {
+          const w = devs.slice().sort((a, b) => a.signal_p95 - b.signal_p95)[0];
+          const nm = (w.name && w.name !== 'unknown') ? w.name : 'an unnamed device (' + h(w.mac.slice(0, 5)) + ' — randomized MAC)';
+          const st = w.signal_p95 >= 50 ? 'ok' : w.signal_p95 >= 35 ? 'warn' : 'crit';
+          verdict('tr-wifi-verdict', st,
+            'weakest: ' + nm + ' on ' + (w.band === '2.4G' ? '2.4' : '5') + ' GHz at ' + w.signal_p95.toFixed(0) + '% worst');
+        } else verdict('tr-wifi-verdict', '', '');
+      }
+      // Bufferbloat: worst recent grade across both directions.
+      {
+        const gs = [];
+        let dayCount = 0;
+        ['down', 'up'].forEach(k => ((t.bloat && t.bloat[k]) || []).forEach(x => {
+          const g = x.grades && x.grades[x.grades.length - 1];
+          if (g) gs.push(g);
+        }));
+        const daySet = new Set();
+        ['down', 'up'].forEach(k => ((t.bloat && t.bloat[k]) || []).forEach(x => daySet.add(x.day)));
+        dayCount = daySet.size;
+        if (gs.length && dayCount) {
+          const worst = gs.slice().sort().reverse()[0];
+          const cls = gradeCls(worst);
+          const st = cls === 'ok' ? 'ok' : cls === 'warn' ? 'warn' : 'crit';
+          verdict('tr-bloat-verdict', st,
+            'grade ' + h(worst) + ' worst across ' + dayCount + ' day' + (dayCount === 1 ? '' : 's') + ' — ' +
+            (st === 'ok' ? 'full speed adds no meaningful latency' : 'latency climbs at full speed'));
+        } else verdict('tr-bloat-verdict', '', '');
+      }
 
       // ── Latency: per-target p50/p95/p99, then jitter and under-load ───
       const lat = document.getElementById('tr-lat-strip');

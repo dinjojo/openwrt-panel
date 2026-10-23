@@ -3,6 +3,7 @@ package health
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/galpt/cake-stats/pkg/orbi"
@@ -72,7 +73,26 @@ func evalWifiSignal(op *orbi.Poller) Check {
 		return Check{Name: name, State: StateUnknown, Value: "—", NumState: -1,
 			Detail: "no wireless clients are connected right now"}
 	}
-	detail := "weakest client is " + who + " on " + bandLabel(band) +
+	// Randomized-MAC devices have no resolvable name; say so instead of the
+	// bare "unknown", and give the MAC prefix so the owner can match it.
+	whoLabel := who
+	if who == "" || who == "unknown" {
+		if d := st.Devices; len(d) > 0 {
+			for _, dev := range d {
+				if dev.ConnType != "2.4G" && dev.ConnType != "5G" {
+					continue
+				}
+				if dev.Signal == weakest && (dev.Name == "" || dev.Name == "unknown") {
+					whoLabel = "an unnamed device (" + strings.ToUpper(dev.MAC[:8]) + "…, randomized MAC)"
+					break
+				}
+			}
+		}
+	}
+	if whoLabel == "" || whoLabel == "unknown" {
+		whoLabel = "an unnamed device"
+	}
+	detail := "weakest client is " + whoLabel + " on " + bandLabel(band) +
 		" — for reference, 70%+ is strong, 50–70% is usable, below 50% shows in slow speeds and dropouts"
 	if weakest < 35 {
 		return Check{Name: name, State: StateCrit, Value: strconv.Itoa(weakest) + "%", Detail: detail, NumState: 2}
