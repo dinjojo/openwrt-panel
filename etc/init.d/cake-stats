@@ -40,10 +40,12 @@ start_service() {
 			done
 		fi
 		logger -t cake-stats "Launching on $2:$3 (interval $4)"
-		# Orbi credentials live in a root-only KEY=VALUE file the binary
-		# reads itself (-orbi-conf), so they never appear in ps or ubus.
+		# Orbi and Tapo credentials live in root-only KEY=VALUE files the
+		# binary reads itself (-orbi-conf, -tapo-conf), so they never appear
+		# in ps or ubus.
 		CONF=""
 		[ -r /opt/monitoring/orbi.conf ] && CONF="-orbi-conf /opt/monitoring/orbi.conf"
+		[ -r /opt/monitoring/tapo.conf ] && CONF="$CONF -tapo-conf /opt/monitoring/tapo.conf"
 		exec "$1" -host "$2" -port "$3" -interval "$4" $CONF
 	' sh "$PROG" "$HOST" "$PORT" "$INTERVAL"
 	procd_set_param env CAKE_TZ="$tz"

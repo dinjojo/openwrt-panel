@@ -22,6 +22,7 @@ import (
 	recovermiddleware "github.com/gofiber/fiber/v3/middleware/recover"
 
 	"github.com/galpt/cake-stats/pkg/sysmon"
+	"github.com/galpt/cake-stats/pkg/tapo"
 
 	"github.com/galpt/cake-stats/pkg/alerts"
 	"github.com/galpt/cake-stats/pkg/clients"
@@ -65,6 +66,7 @@ type Server struct {
 	wan          *wan.Poller
 	sys          *sysmon.Pollers
 	orbi         *orbi.Poller
+	tapo         *tapo.Poller // smart-plug poller; nil when unconfigured
 	shell        *orbissn.Poller  // Orbi shell (SSH/telnet) poller; nil or disabled when unconfigured
 	radio        *radio.Collector // local monitor-mode dongle; nil or disabled when unconfigured
 	alerts       *alerts.Notifier // ntfy push; nil when unconfigured
@@ -119,6 +121,7 @@ func New(addr string, interval time.Duration, histCap int, vmURL, version string
 	app.Get("/api/incidents", s.handleAPIIncidents)
 	app.Get("/api/tunnel", s.handleAPITunnel)
 	app.Get("/api/orbi", s.handleAPIOrbi)
+	app.Get("/api/tapo", s.handleAPITapo)
 	app.Get("/api/radio", s.handleAPIRadio)
 	app.Get("/api/config", s.handleAPIConfig)
 	app.Get("/api/report", s.handleAPIReport)
@@ -142,6 +145,10 @@ func (s *Server) Run(ctx context.Context, addr string) error {
 		s.orbi.SetEventHook(s.events.Add)
 	}
 	go s.orbiRun(ctx)
+	if s.tapo != nil {
+		s.tapo.SetVMClient(s.vmc)
+		go s.tapo.Run(ctx)
+	}
 	if s.shell.Enabled() {
 		s.shell.SetEventHook(s.events.Add)
 		go s.shell.Run(ctx)
@@ -404,7 +411,7 @@ func (s *Server) handleAPIHealth(c fiber.Ctx) error {
 		s.statsMu.RLock()
 		live = s.stats
 		s.statsMu.RUnlock()
-		s.healthCache = health.Eval(c.Context(), s.vmc, live, s.history, s.clientStore, s.wan, s.sys, s.orbi)
+		s.healthCache = health.Eval(c.Context(), s.vmc, live, s.history, s.clientStore, s.wan, s.sys, s.orbi, s.tapo)
 		s.healthAt = time.Now()
 	}
 
@@ -910,6 +917,21 @@ func (s *Server) orbiRun(ctx context.Context) {
 // SetShellPoller registers the Orbi shell poller (per-station Wi-Fi stats
 // over SSH/telnet). Call before Run; Run starts it when it is configured.
 func (s *Server) SetShellPoller(p *orbissn.Poller) { s.shell = p }
+
+// SetTapoPoller registers the smart-plug poller. Call before Run; Run starts
+// it and pushes its gauges when it is configured.
+func (s *Server) SetTapoPoller(p *tapo.Poller) { s.tapo = p }
+
+// handleAPITapo reports the smart-plug snapshot: relay state, model,
+// nickname, Wi-Fi RSSI, on-duration and live power when the model supports it.
+func (s *Server) handleAPITapo(c fiber.Ctx) error {
+	if s.tapo == nil {
+		return c.Status(503).SendString(`{"error":"no plug configured"}`)
+	}
+	c.Set("Content-Type", "application/json; charset=utf-8")
+	b, _ := json.Marshal(s.tapo.Snapshot())
+	return c.Send(b)
+}
 
 // orbiPayload is the /api/orbi body: the SOAP snapshot plus the shell
 // poller's per-station stats, radio environment and status (all always

@@ -18,6 +18,7 @@ import (
 	"github.com/galpt/cake-stats/pkg/history"
 	"github.com/galpt/cake-stats/pkg/orbi"
 	"github.com/galpt/cake-stats/pkg/sysmon"
+	"github.com/galpt/cake-stats/pkg/tapo"
 	"github.com/galpt/cake-stats/pkg/types"
 	"github.com/galpt/cake-stats/pkg/vm"
 	"github.com/galpt/cake-stats/pkg/wan"
@@ -65,7 +66,7 @@ const probeAgeLimit = 90 * time.Minute
 // Eval runs all checks. vm may be nil, in which case VM-backed checks report
 // unknown rather than failing. wan may be nil (PPPoE check reports unknown).
 // sys may be nil (its checks report unknown).
-func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *history.HistoryStore, store *clients.Store, wp *wan.Poller, sys *sysmon.Pollers, op *orbi.Poller) []Check {
+func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *history.HistoryStore, store *clients.Store, wp *wan.Poller, sys *sysmon.Pollers, op *orbi.Poller, tp *tapo.Poller) []Check {
 	checks := []Check{
 		evalBufferbloat(ctx, client, live),
 		evalWANLatency(ctx, client),
@@ -86,6 +87,9 @@ func Eval(ctx context.Context, client *vm.Client, live []types.CakeStats, hist *
 	}
 	if op.Enabled() {
 		checks = append(checks, evalOrbi(op), evalWifiSignal(op))
+	}
+	if tp != nil {
+		checks = append(checks, evalTapo(tp))
 	}
 	// NumState is derived from State by definition; enforce it here so a
 	// literal that forgets (or mistypes) the field can never disagree.

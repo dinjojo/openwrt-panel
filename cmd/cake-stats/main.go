@@ -18,6 +18,7 @@ import (
 	"github.com/galpt/cake-stats/pkg/orbissn"
 	"github.com/galpt/cake-stats/pkg/radio"
 	"github.com/galpt/cake-stats/pkg/server"
+	"github.com/galpt/cake-stats/pkg/tapo"
 	"github.com/galpt/cake-stats/pkg/tzloc"
 	"github.com/galpt/cake-stats/pkg/usage"
 	"github.com/rs/zerolog"
@@ -43,6 +44,12 @@ func main() {
 	orbiSSHUser := flag.String("orbi-ssh-user", os.Getenv("ORBI_SSH_USER"), "Orbi SSH user for per-client Wi-Fi stats (default root when -orbi-ssh-pass is set)")
 	orbiSSHPass := flag.String("orbi-ssh-pass", os.Getenv("ORBI_SSH_PASS"), "Orbi SSH password (enables the SSH shell poller; host taken from -orbi-url)")
 	orbiTelnetPass := flag.String("orbi-telnet-pass", os.Getenv("ORBI_TELNET_PASS"), "Orbi telnet password (enables telnet shell polling, fallback after SSH; user = -orbi-ssh-user or root)")
+	tapoHost := flag.String("tapo-host", os.Getenv("TAPO_HOST"), "Tapo plug host, e.g. 192.168.1.242 (empty disables plug monitoring)")
+	tapoUser := flag.String("tapo-user", os.Getenv("TAPO_USER"), "Tapo account email")
+	tapoPass := flag.String("tapo-pass", os.Getenv("TAPO_PASS"), "Tapo account password")
+	// Root-only KEY=VALUE file, same pattern as -orbi-conf: the Tapo account
+	// credentials reach the process without appearing in ps or /proc cmdline.
+	tapoConf := flag.String("tapo-conf", os.Getenv("TAPO_CONF"), "KEY=VALUE file with TAPO_HOST, TAPO_USER, TAPO_PASS; values already set via flags or environment win")
 	radioIface := flag.String("radio-iface", os.Getenv("RADIO_IFACE"), "local monitor-mode Wi-Fi interface for channel utilisation and neighbour scans, e.g. wlan1 (empty disables)")
 	// The ntfy token is never logged; keep it in a root-only env file.
 	alertURL := flag.String("alert-ntfy-url", os.Getenv("ALERT_NTFY_URL"), "ntfy topic URL for push alerts on warn/crit events, e.g. https://ntfy.sh/mytopic (empty disables)")
@@ -80,6 +87,28 @@ func main() {
 				{"ORBI_SSH_USER", "orbi-ssh-user", orbiSSHUser},
 				{"ORBI_SSH_PASS", "orbi-ssh-pass", orbiSSHPass},
 				{"ORBI_TELNET_PASS", "orbi-telnet-pass", orbiTelnetPass},
+			} {
+				if v, ok := conf[e.key]; ok && !explicit[e.flag] && *e.val == os.Getenv(e.key) {
+					*e.val = v
+				}
+			}
+		}
+	}
+
+	// Tapo settings from a root-only conf file, same precedence as Orbi's.
+	if *tapoConf != "" {
+		if conf, err := readKVFile(*tapoConf); err != nil {
+			log.Logger.Warn().Err(err).Str("file", *tapoConf).Msg("cannot read -tapo-conf; continuing without it")
+		} else {
+			explicit := map[string]bool{}
+			flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+			for _, e := range []struct {
+				key, flag string
+				val       *string
+			}{
+				{"TAPO_HOST", "tapo-host", tapoHost},
+				{"TAPO_USER", "tapo-user", tapoUser},
+				{"TAPO_PASS", "tapo-pass", tapoPass},
 			} {
 				if v, ok := conf[e.key]; ok && !explicit[e.flag] && *e.val == os.Getenv(e.key) {
 					*e.val = v
@@ -128,6 +157,10 @@ func main() {
 		TelnetPass: *orbiTelnetPass,
 	}))
 	srv.SetRadioCollector(radio.New(*radioIface))
+	if *tapoHost != "" {
+		srv.SetTapoPoller(tapo.New(tapo.Config{Host: *tapoHost, User: *tapoUser, Pass: *tapoPass}, nil))
+		log.Logger.Info().Str("host", *tapoHost).Msg("Tapo plug monitoring enabled")
+	}
 	notifier, err := alerts.New(*alertURL, *alertToken)
 	if err != nil {
 		log.Logger.Warn().Err(err).Msg("push alerts disabled")

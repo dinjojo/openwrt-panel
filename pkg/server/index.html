@@ -576,6 +576,7 @@
           <div class="sect-head"><h2 class="h2">Network</h2>
             <span class="sm muted"><span id="ov-clients" class="num ink strong">–</span> clients online</span></div>
           <div id="ov-top3" class="rows"></div>
+          <div id="ov-tapo" class="sm muted" style="display:none"></div>
         </div>
       </div>
 
@@ -3808,12 +3809,39 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
         }
         const [cl, evs] = await Promise.all(jobs);
         if (Date.now() - orbiAt > 60000) loadOrbi(); // Wi-Fi strip on this card
+        loadTapo(); // smart plug line, hidden when not configured
         document.getElementById('ov-clients').textContent = Array.isArray(cl) ? cl.filter(c => c.online).length : '–';
         renderTopClients(Array.isArray(cl) ? cl : []);
         renderEvents(Array.isArray(evs) ? evs : []);
         if (Array.isArray(evs)) { lampEvents = evs; lampEventsAt = Date.now(); renderLamps(); }
         renderOverview();
       } catch (e) { console.error('[overview]', e); }
+    }
+    // Smart plug (Tapo, when -tapo-conf is given): one compact line in the
+    // Network card. Stays hidden entirely when the API says not configured.
+    function plugDur(s) {
+      if (!s || s < 60) return s ? s + 's' : '';
+      const m = Math.round(s / 60);
+      if (m < 60) return m + 'm';
+      return Math.floor(m / 60) + 'h ' + (m % 60 ? (m % 60) + 'm' : '').trim();
+    }
+    async function loadTapo() {
+      const el = document.getElementById('ov-tapo');
+      if (!el) return;
+      let d;
+      try {
+        d = await fetch(appURL('/api/tapo')).then(r => { if (!r.ok) throw 0; return r.json(); });
+      } catch (_) { el.style.display = 'none'; return; }
+      el.style.display = '';
+      if (!d.available) {
+        el.innerHTML = lamp('crit') + ' ' + h(d.name || d.model || 'Plug') + ' — not responding';
+        return;
+      }
+      const onFor = d.on_for_s > 0 ? ' for ' + plugDur(d.on_for_s) : '';
+      const pwr = d.has_power ? ' · ' + Number(d.power_w).toFixed(1) + ' W' : '';
+      const rssi = d.rssi ? ' · ' + d.rssi + ' dBm' : '';
+      el.innerHTML = lamp(d.on ? 'ok' : 'info') + ' ' + h(d.name || d.model || 'Plug') +
+        ' — ' + (d.on ? 'on' : 'off') + onFor + pwr + rssi;
     }
     // WAN traffic chart — lives on the Diagnostics tab (line detail).
     // Rendered only while that tab is visible; uPlot needs layout width,
