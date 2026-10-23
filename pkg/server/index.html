@@ -3160,7 +3160,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
           if (vis.length < 3) vis = devs.slice(0, Math.min(devs.length, 5));
           if (vis.length > 8) vis = vis.slice(0, 8);
           const rest = devs.slice(vis.length);
-          const head = ['Device', 'Worst signal', 'Link Mbit/s', 'Seen'];
+          const head = ['Device', 'Signal, worst 5%', 'Link Mbit/s', 'Seen'];
           html += trTable(head, vis.map(w => devRow(w, false)), 'wifi');
           html += trMore('wifi', rest.length ? rest.length + ' rarely seen device' + (rest.length === 1 ? '' : 's') : 'How to read this',
             (rest.length ? trTable(head, rest.map(w => devRow(w, true)), 'wifi') : '') +
