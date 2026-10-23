@@ -9,6 +9,7 @@ import (
 	fiber "github.com/gofiber/fiber/v3"
 
 	"github.com/galpt/cake-stats/pkg/alerts"
+	"github.com/galpt/cake-stats/pkg/health"
 	"github.com/galpt/cake-stats/pkg/log"
 	"github.com/galpt/cake-stats/pkg/radio"
 	"github.com/galpt/cake-stats/pkg/usage"
@@ -24,6 +25,18 @@ func (s *Server) SetRadioCollector(c *radio.Collector) { s.radio = c }
 // SetAlerts registers the push notifier (nil disables alerts). Call
 // before Run; every warn/crit event is offered to it.
 func (s *Server) SetAlerts(n *alerts.Notifier) { s.alerts = n }
+
+// SetLocation sets the zone whose calendar days bound /api/report rows and
+// in which the health check reads the probe cron schedule (the -tz flag;
+// it must match the zone cron runs in). Call before Run. Default:
+// time.Local.
+func (s *Server) SetLocation(loc *time.Location) {
+	if loc == nil {
+		return
+	}
+	s.loc = loc
+	health.SetLocation(loc)
+}
 
 // SetUsageStore registers where per-client daily usage is persisted (nil
 // disables). Call before Run.

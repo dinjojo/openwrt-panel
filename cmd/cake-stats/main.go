@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	_ "time/tzdata" // IANA zones for -tz on routers without /usr/share/zoneinfo
 
 	"github.com/galpt/cake-stats/pkg/alerts"
 	"github.com/galpt/cake-stats/pkg/log"
@@ -16,6 +17,7 @@ import (
 	"github.com/galpt/cake-stats/pkg/orbissn"
 	"github.com/galpt/cake-stats/pkg/radio"
 	"github.com/galpt/cake-stats/pkg/server"
+	"github.com/galpt/cake-stats/pkg/tzloc"
 	"github.com/galpt/cake-stats/pkg/usage"
 	"github.com/rs/zerolog"
 )
@@ -42,6 +44,11 @@ func main() {
 	alertURL := flag.String("alert-ntfy-url", os.Getenv("ALERT_NTFY_URL"), "ntfy topic URL for push alerts on warn/crit events, e.g. https://ntfy.sh/mytopic (empty disables)")
 	alertToken := flag.String("alert-ntfy-token", os.Getenv("ALERT_NTFY_TOKEN"), "ntfy access token (sent as Authorization: Bearer)")
 	dataDir := flag.String("data-dir", envOr("CAKE_DATA_DIR", "/opt/monitoring"), "directory for persisted per-client usage files (usage-YYYY-MM-DD.jsonl)")
+	// Calendar days (report, usage files) and the probe-schedule awareness
+	// of the health check follow this zone. It must match the zone cron
+	// runs the probe in. The OpenWrt init script passes the router's zone
+	// (uci zonename, else /etc/TZ) as CAKE_TZ.
+	tzName := flag.String("tz", envOr("CAKE_TZ", "Local"), "time zone for day boundaries and the probe schedule: IANA name (Asia/Kolkata), POSIX string without DST (IST-5:30) or Local")
 	showVer := flag.Bool("version", false, "print version and exit")
 
 	flag.Usage = func() {
@@ -59,10 +66,27 @@ func main() {
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	log.Logger = log.Logger.Level(zerolog.InfoLevel).With().Str("version", Version).Logger()
 
+	loc, err := tzloc.Load(*tzName)
+	if err != nil {
+		log.Logger.Warn().Err(err).Msg("bad -tz / CAKE_TZ; falling back to the process local zone")
+		loc = time.Local
+	}
+	// Make the zone process-wide too, so every formatted time (health
+	// details, logs) agrees with the day boundaries. Done before any
+	// goroutine starts.
+	time.Local = loc
+	zone, off := time.Now().In(loc).Zone()
+	tzEv := log.Logger.Info().Str("tz", loc.String()).Str("zone", zone).Int("utc_offset_s", off).Str("env_TZ", os.Getenv("TZ"))
+	if off == 0 && *tzName == "Local" {
+		tzEv = tzEv.Str("hint", "process zone resolved to UTC; set CAKE_TZ (e.g. Asia/Kolkata) so report days and the probe schedule match the router")
+	}
+	tzEv.Msg("time zone")
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	srv := server.New(addr, *interval, *histCap, *vmURL, Version, orbi.New(*orbiURL, *orbiUser, *orbiPass, nil))
+	srv.SetLocation(loc)
 	orbiHost := ""
 	if u, err := url.Parse(*orbiURL); err == nil && *orbiURL != "" {
 		orbiHost = u.Hostname()
@@ -80,7 +104,9 @@ func main() {
 	}
 	srv.SetAlerts(notifier)
 	if *dataDir != "" {
-		srv.SetUsageStore(usage.New(*dataDir))
+		us := usage.New(*dataDir)
+		us.SetLocation(loc)
+		srv.SetUsageStore(us)
 	}
 	if err := srv.Run(ctx, addr); err != nil {
 		log.Logger.Fatal().Err(err).Msg("fatal")

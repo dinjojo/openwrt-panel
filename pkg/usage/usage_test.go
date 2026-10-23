@@ -85,3 +85,36 @@ func TestPrune(t *testing.T) {
 		t.Fatal("40-day-old file should have been pruned")
 	}
 }
+
+func TestDayKeysFollowLocation(t *testing.T) {
+	ist := time.FixedZone("IST", 5*3600+30*60)
+	cases := []struct {
+		name string
+		at   time.Time // instant, given in UTC as a UTC process would see it
+		loc  *time.Location
+		file string
+	}{
+		{"IST morning is the next IST day", time.Date(2026, 10, 21, 20, 0, 0, 0, time.UTC), ist, "usage-2026-10-22.jsonl"},
+		{"IST just before midnight", time.Date(2026, 10, 22, 18, 29, 0, 0, time.UTC), ist, "usage-2026-10-22.jsonl"},
+		{"no location: the time's own zone", time.Date(2026, 10, 21, 20, 0, 0, 0, time.UTC), nil, "usage-2026-10-21.jsonl"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			s := New(dir)
+			if c.loc != nil {
+				s.SetLocation(c.loc)
+			}
+			if err := s.Append(c.at, []Sample{{MAC: "aa:bb:cc:dd:ee:01", Rx: 1}}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, c.file)); err != nil {
+				t.Fatalf("want %s: %v", c.file, err)
+			}
+			days := s.Daily(1, c.at)
+			if len(days) != 1 || "usage-"+days[0].Date+".jsonl" != c.file {
+				t.Errorf("Daily = %+v, want the %s day", days, c.file)
+			}
+		})
+	}
+}

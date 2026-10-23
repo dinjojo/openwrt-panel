@@ -72,6 +72,27 @@ func (c *Client) QueryAt(ctx context.Context, query string, ts int64) ([]Point, 
 	return c.fetch(ctx, u, decodeVector)
 }
 
+// QueryRaw returns the raw samples of selector stored in [start, end] with
+// their ORIGINAL timestamps, one Series per label set. It evaluates the
+// range-vector selector `selector[<window>]` as an instant query at end,
+// which VictoriaMetrics (like Prometheus) answers with the stored samples
+// rather than step-aligned points.
+//
+// Use it whenever the sample time matters: instant queries report the
+// query time (Point.TS is "now" for every sample still inside the
+// lookback window) and range queries report step-grid times with values
+// carried forward, so neither can tell "a new probe ran" from "the same
+// probe is still visible".
+func (c *Client) QueryRaw(ctx context.Context, selector string, start, end int64) ([]Series, error) {
+	window := end - start + 1 // the selector window is left-open; +1 keeps start inclusive
+	if window < 1 {
+		window = 1
+	}
+	q := selector + "[" + strconv.FormatInt(window, 10) + "s]"
+	u := c.BaseURL + "/api/v1/query?query=" + url.QueryEscape(q) + "&time=" + strconv.FormatInt(end, 10)
+	return c.fetchRange(ctx, u)
+}
+
 func decodeVector(raw json.RawMessage) ([]Point, error) {
 	var r apiVectorResult
 	if err := json.Unmarshal(raw, &r); err != nil {

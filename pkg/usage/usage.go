@@ -2,7 +2,8 @@
 // usage survives restarts and nlbwmon period roll-overs.
 //
 // Every snapshot appends one JSON line per client to
-// <dir>/usage-YYYY-MM-DD.jsonl (local calendar day):
+// <dir>/usage-YYYY-MM-DD.jsonl (calendar day in the store's zone — see
+// SetLocation; the same zone as the report's days):
 //
 //	{"t":1792651500,"mac":"AA:BB:CC:DD:EE:FF","rx":123456,"tx":7890}
 //
@@ -55,10 +56,26 @@ const keepDays = 35
 type Store struct {
 	dir string
 	mu  sync.Mutex
+	loc *time.Location // calendar-day zone for file names; nil = the time's own zone
 }
 
 // New returns a store rooted at dir (created on first write).
 func New(dir string) *Store { return &Store{dir: dir} }
+
+// SetLocation sets the zone whose calendar days name the usage files and
+// bound Daily's days — the same zone /api/report uses (the -tz flag), so a
+// usage day and a report day cover the same 24 hours. Without it the zone
+// of the time passed in is used. Files written before the zone changed
+// keep their old (e.g. UTC) day boundaries. Call before use.
+func (s *Store) SetLocation(loc *time.Location) { s.loc = loc }
+
+// local converts t into the store's day zone.
+func (s *Store) local(t time.Time) time.Time {
+	if s.loc != nil {
+		return t.In(s.loc)
+	}
+	return t
+}
 
 // Dir is the directory the files live in.
 func (s *Store) Dir() string { return s.dir }
@@ -71,6 +88,7 @@ func (s *Store) Append(t time.Time, samples []Sample) error {
 	if len(samples) == 0 {
 		return nil
 	}
+	t = s.local(t)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
@@ -126,7 +144,7 @@ func (s *Store) pruneLocked(now time.Time) {
 func (s *Store) Daily(n int, now time.Time) []Day {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	today := dayStart(now)
+	today := dayStart(s.local(now))
 	type last struct{ rx, tx int64 }
 	prev := map[string]last{}
 	// Baseline from the day before the window.

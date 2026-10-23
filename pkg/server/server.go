@@ -69,6 +69,7 @@ type Server struct {
 	alerts       *alerts.Notifier // ntfy push; nil when unconfigured
 	usage        *usage.Store     // per-client daily usage files; nil disables
 	events       *events.Store
+	loc          *time.Location // calendar-day zone for reports and probe-episode labels (-tz)
 	version      string
 	configHashes map[string]string // last sha256 of each /etc/config file
 }
@@ -80,6 +81,7 @@ func New(addr string, interval time.Duration, histCap int, vmURL, version string
 		history:      history.NewHistoryStore(histCap),
 		clientStore:  clients.New(30*time.Second, vmURL),
 		orbi:         orb,
+		loc:          time.Local,
 		version:      version,
 	}
 	if vmURL != "" {
@@ -992,7 +994,7 @@ func (s *Server) watchEvents(ctx context.Context) {
 	prevWan := -1 // -1 = unknown (first tick records without events)
 	prevWarp := -1
 	prevBoot := ""
-	lastProbeTS := int64(0)
+	probes := newProbeTracker(time.Now().Unix())
 	s.configHashes = hashConfigDir() // seed: first tick never fabricates config events
 	tick := 0
 	t := time.NewTicker(15 * time.Second)
@@ -1063,9 +1065,10 @@ func (s *Server) watchEvents(ctx context.Context) {
 			}
 		}
 
-		// Probe results (~every minute check; the probe itself runs 15-min).
+		// Probe results (checked every minute; the probe itself runs hourly
+		// 11:00–20:00). One event per probe run, keyed on the sample time.
 		if s.vmc != nil && tick%4 == 0 {
-			s.recordProbeEvent(ctx, &lastProbeTS)
+			s.recordProbeEvents(ctx, probes)
 		}
 	}
 }
@@ -1090,48 +1093,4 @@ func hashConfigDir() map[string]string {
 		out[e.Name()] = hex.EncodeToString(sum[:])
 	}
 	return out
-}
-
-// recordProbeEvent adds an event for each new probe run, with the grade
-// deciding severity. The first sighting only sets the cursor.
-func (s *Server) recordProbeEvent(ctx context.Context, lastProbeTS *int64) {
-	pts, err := s.vmc.Query(ctx, `probe_bloat_ms{direction="down"}`)
-	if err != nil || len(pts) == 0 {
-		return
-	}
-	latest := pts[0]
-	for _, p := range pts {
-		if p.TS > latest.TS {
-			latest = p
-		}
-	}
-	if latest.TS <= *lastProbeTS {
-		return
-	}
-	grade := ""
-	if gs, gerr := s.vmc.Query(ctx, `probe_bloat_grade{direction="down"}`); gerr == nil {
-		best := int64(0)
-		for _, p := range gs {
-			if p.Val > 0 && p.TS > best {
-				best = p.TS
-				grade = p.Labels["grade"]
-			}
-		}
-	}
-	if *lastProbeTS != 0 {
-		sev := "ok"
-		switch grade {
-		case "C":
-			sev = "warn"
-		case "D", "E", "F":
-			sev = "crit"
-		}
-		// Clean probe runs stay off the timeline — a "speed check was fine"
-		// event every 15 minutes would drown the feed and push out real
-		// history. Only surprises are events.
-		if sev != "ok" {
-			s.events.Add("probe", sev, fmt.Sprintf("Speed check worse than usual: grade %s, +%.1f ms under load", grade, latest.Val))
-		}
-	}
-	*lastProbeTS = latest.TS
 }

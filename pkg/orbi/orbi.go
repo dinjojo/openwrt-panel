@@ -562,15 +562,15 @@ func (p *Poller) diffEvents(devs []Device) {
 		}
 		prevKey := prev[d.MAC]
 		if prevKey == "" {
-			p.onEvent("orbi", "info", "Wi-Fi client joined: "+displayName(d)+" on "+band(d.ConnType))
+			p.onEvent("orbi", "info", "Wi-Fi client joined: "+displayName(d)+" ("+strings.ToLower(d.MAC)+") on "+band(d.ConnType))
 			continue
 		}
 		prevCT, prevAP, _ := strings.Cut(prevKey, "|")
 		if prevCT != d.ConnType {
-			p.onEvent("orbi", "info", displayName(d)+" moved from "+band(prevCT)+" to "+band(d.ConnType))
+			p.onEvent("orbi", "info", displayName(d)+" ("+strings.ToLower(d.MAC)+") moved from "+band(prevCT)+" to "+band(d.ConnType))
 		}
 		if prevAP != d.ConnOrbi {
-			p.onEvent("orbi", "info", displayName(d)+" roamed from "+p.apNameFor(devs, prevAP)+" to "+p.apNameFor(devs, d.ConnOrbi))
+			p.onEvent("orbi", "info", displayName(d)+" ("+strings.ToLower(d.MAC)+") roamed from "+p.apNameFor(devs, prevAP)+" to "+p.apNameFor(devs, d.ConnOrbi))
 		}
 	}
 	for mac, key := range prev {

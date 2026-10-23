@@ -405,33 +405,34 @@ func evalBufferbloat(ctx context.Context, client *vm.Client, live []types.CakeSt
 		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "VictoriaMetrics not configured"}
 	}
 
-	// Use a range query over the last two hours: the probe only pushes
-	// hourly, so instant queries would report stale series as missing.
-	end := time.Now().Unix()
-	start := end - 7200
-	down, err := client.QueryRange(ctx, `probe_bloat_ms{direction="down"}`, start, end, "60s")
+	// Find the newest probe result with its real sample time (raw samples,
+	// not step-aligned range points) over probeLookback, so last night's
+	// run is still visible in the morning; then judge it against the cron
+	// schedule (probe_schedule.go).
+	now := time.Now().In(schedLoc())
+	end := now.Unix()
+	down, err := client.QueryRaw(ctx, `probe_bloat_ms{direction="down"}`, end-int64(probeLookback/time.Second), end)
 	if err != nil {
 		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "probe query failed: " + err.Error()}
 	}
+	dBloat, dTS, ok := latestFromSeries(down)
+	if f := classifyProbe(now, dTS, ok); f != probeFresh {
+		grade := ""
+		if ok && f == probeLast {
+			if gs, gerr := client.QueryRaw(ctx, `probe_bloat_grade{direction="down"}`, dTS.Unix()-1, dTS.Unix()+1); gerr == nil {
+				grade = gradeFromSeries(gs)
+			}
+		}
+		return probeOffScheduleCheck(name, f, now, dTS, dBloat, grade)
+	}
+
+	// Fresh result: the other probe series over the last two hours (the
+	// probe pushes hourly, so instant queries would miss them).
+	start := end - 7200
 	up, _ := client.QueryRange(ctx, `probe_bloat_ms{direction="up"}`, start, end, "60s")
 	downGrade, _ := client.QueryRange(ctx, `probe_bloat_grade{direction="down"}`, start, end, "60s")
 	upGrade, _ := client.QueryRange(ctx, `probe_bloat_grade{direction="up"}`, start, end, "60s")
 	speeds, _ := client.QueryRange(ctx, `probe_burst_speed_bps{direction="down"}`, start, end, "60s")
-
-	dBloat, dTS, ok := latestFromSeries(down)
-	if !ok {
-		return Check{Name: name, State: StateUnknown, Value: "—", Detail: "no probe data yet — first probe runs within the hour"}
-	}
-	if time.Since(dTS) > probeAgeLimit {
-		// The probe only runs 11:00-20:00; an old result at night is by design.
-		h := time.Now().Hour()
-		if h < 11 || h > 20 {
-			return Check{Name: name, State: StateOK, Value: fmtBloat(dBloat) + " (last)",
-				Detail: "last probe at " + dTS.Format("15:04") + " — probes run 11:00–20:00 only, resuming at 11:00", NumState: 0}
-		}
-		return Check{Name: name, State: StateWarn, Value: "stale",
-			Detail: fmt.Sprintf("last probe ran %s ago — check cron entry", time.Since(dTS).Round(time.Minute))}
-	}
 
 	uBloat, _, uOK := latestFromSeries(up)
 	dGrade := gradeFromSeries(downGrade)

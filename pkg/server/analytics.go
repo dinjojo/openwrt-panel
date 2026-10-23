@@ -36,11 +36,11 @@ const (
 
 // PercentileReport is the response of /api/percentiles.
 type PercentileReport struct {
-	Range  string             `json:"range"`
+	Range   string             `json:"range"`
 	Targets []PercentileTarget `json:"targets"`
-	Loaded  *PercentilePair   `json:"loaded,omitempty"`  // probe RTT under load
-	Idle    *PercentilePair    `json:"idle,omitempty"`    // probe idle RTT
-	Loss    *PercentilePair    `json:"loss,omitempty"`    // ping droprate
+	Loaded  *PercentilePair    `json:"loaded,omitempty"` // probe RTT under load
+	Idle    *PercentilePair    `json:"idle,omitempty"`   // probe idle RTT
+	Loss    *PercentilePair    `json:"loss,omitempty"`   // ping droprate
 }
 
 type PercentileTarget struct {
@@ -116,8 +116,9 @@ type Incident struct {
 	Start     int64   `json:"start"`
 	End       int64   `json:"end"`
 	PeakMS    float64 `json:"peak_ms"`
-	Direction string  `json:"direction"` // download | upload | both
-	Source    string  `json:"source"`    // probe | passive
+	Direction string  `json:"direction"`          // download | upload | both
+	Source    string  `json:"source"`             // probe | passive
+	Readings  int     `json:"readings,omitempty"` // probe episodes: number of probe runs over the threshold
 	Hint      string  `json:"hint"`
 }
 
@@ -142,25 +143,11 @@ func (s *Server) handleAPIIncidents(c fiber.Ctx) error {
 	defer cancel()
 
 	rep := IncidentReport{Range: rng, Episodes: []Incident{}}
-
-	// Active detector: probe runs every 15 min; consecutive above-threshold
-	// samples collapse into one episode per direction.
-	step := "900s"
-	down, errD := s.vmc.QueryRange(ctx, `probe_bloat_ms{direction="down"}`, start, end, step)
-	up, errU := s.vmc.QueryRange(ctx, `probe_bloat_ms{direction="up"}`, start, end, step)
-	if errD == nil && len(down) > 0 {
-		rep.addEpisodes(probeEpisodes(down[0], "download"))
-	}
-	if errU == nil && len(up) > 0 {
-		rep.addEpisodes(probeEpisodes(up[0], "upload"))
-	}
-
-	// Passive detector (24h/7d only): router RTT while the WAN is busy.
-	// At 30 d the range step would average the 60 s samples together and
-	// the consecutive-sample rule would silently stop working.
-	if rng != "30d" {
-		rep.addEpisodes(s.passiveEpisodes(ctx, start, end))
-	}
+	// Passive detector at 24h/7d only: at 30 d the range step would
+	// average the 60 s samples together and the consecutive-sample rule
+	// would silently stop working.
+	eps, _, _ := s.bufferingEpisodes(ctx, start, end, rng != "30d")
+	rep.addEpisodes(eps)
 
 	sort.Slice(rep.Episodes, func(i, j int) bool { return rep.Episodes[i].Start > rep.Episodes[j].Start })
 	rep.Count = len(rep.Episodes)
@@ -179,31 +166,106 @@ func (r *IncidentReport) addEpisodes(eps []Incident) {
 	r.Episodes = append(r.Episodes, eps...)
 }
 
-// probeEpisodes groups consecutive above-threshold probe samples into
-// episodes.
-func probeEpisodes(se vm.Series, direction string) []Incident {
-	var eps []Incident
-	var cur *Incident
-	for i, ts := range se.TS {
-		if se.Val[i] > bloatThresholdMS {
-			if cur == nil {
-				cur = &Incident{Start: ts, End: ts, PeakMS: se.Val[i], Direction: direction, Source: "probe"}
-			} else {
-				cur.End = ts
-				if se.Val[i] > cur.PeakMS {
-					cur.PeakMS = se.Val[i]
-				}
-			}
-		} else if cur != nil {
-			cur.Hint = "speed check added latency under load — the shaper held the ceiling but the line ran over its ideal for a stretch"
-			eps = append(eps, *cur)
-			cur = nil
+// bufferingEpisodes is THE bufferbloat-episode aggregation. Both the
+// episodes panel (/api/incidents) and the report's buffering_events
+// (/api/report) count its output, so the two numbers agree for the same
+// window — keep it that way: change episode rules here, never in one
+// caller only.
+//
+// It returns the episodes found in [start, end]: active-probe episodes in
+// both directions (from raw probe samples, see probeEpisodes) plus, when
+// passive is set, passive RTT-under-load episodes. probeSamples is the
+// number of raw probe samples seen (0 = no probe coverage); err is set
+// only when the probe data could not be read at all.
+func (s *Server) bufferingEpisodes(ctx context.Context, start, end int64, passive bool) (eps []Incident, probeSamples int, err error) {
+	failed := 0
+	for _, d := range []struct{ label, name string }{{"down", "download"}, {"up", "upload"}} {
+		series, qerr := s.vmc.QueryRaw(ctx, `probe_bloat_ms{direction="`+d.label+`"}`, start, end)
+		if qerr != nil {
+			failed++
+			err = qerr
+			continue
+		}
+		for _, se := range series {
+			probeSamples += len(se.TS)
+			eps = append(eps, probeEpisodes(se, d.name, s.loc)...)
 		}
 	}
-	if cur != nil {
-		cur.Hint = "speed check added latency under load — the shaper held the ceiling but the line ran over its ideal for a stretch"
-		eps = append(eps, *cur)
+	if failed < 2 {
+		err = nil
 	}
+	if passive {
+		eps = append(eps, s.passiveEpisodes(ctx, start, end)...)
+	}
+	return eps, probeSamples, err
+}
+
+const (
+	// probeStep is the nominal width given to one probe reading. A probe
+	// run takes well under a minute, but it stands for the line's state
+	// around that time, so an episode ends one step after its last bad
+	// reading.
+	probeStep = 900 // seconds
+	// probeMaxGap: bad readings further apart than this are separate
+	// episodes even with no good reading between them (e.g. the 20:00
+	// run and the next day's 11:00 run). Covers the hourly cadence (and
+	// the older 15-minute one) with slack.
+	probeMaxGap = 75 * 60 // seconds
+)
+
+// probeEpisodes groups consecutive above-threshold probe readings into
+// episodes. se must hold RAW samples (vm.QueryRaw): each timestamp is a
+// real probe run. (Step-aligned range points carried one hourly probe
+// forward across several 15-minute steps, turning a 28-second probe into a
+// "~45 min stretch" that started up to 15 minutes late.)
+//
+// An episode starts at its first bad reading's own timestamp and ends at
+// its last bad reading + probeStep. A one-reading episode is described as
+// a single probe reading at that time, not as a stretch.
+func probeEpisodes(se vm.Series, direction string, loc *time.Location) []Incident {
+	if loc == nil {
+		loc = time.Local
+	}
+	var eps []Incident
+	var cur *Incident
+	readings := 0
+	lastBad := int64(0)
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		cur.End = lastBad + probeStep
+		cur.Readings = readings
+		at := time.Unix(cur.Start, 0).In(loc).Format("15:04")
+		if readings == 1 {
+			cur.Hint = "single probe reading at " + at + ": the speed check added " + strconv.FormatFloat(cur.PeakMS, 'f', 0, 64) +
+				" ms of latency under load — the shaper held the ceiling but the line ran over its ideal during that test"
+		} else {
+			cur.Hint = strconv.Itoa(readings) + " probe readings in a row from " + at + " to " + time.Unix(lastBad, 0).In(loc).Format("15:04") +
+				" added up to " + strconv.FormatFloat(cur.PeakMS, 'f', 0, 64) + " ms of latency under load — the shaper held the ceiling but the line ran over its ideal for that stretch"
+		}
+		eps = append(eps, *cur)
+		cur = nil
+		readings = 0
+	}
+	for i, ts := range se.TS {
+		v := se.Val[i]
+		if v <= bloatThresholdMS {
+			flush()
+			continue
+		}
+		if cur != nil && ts-lastBad > probeMaxGap {
+			flush()
+		}
+		if cur == nil {
+			cur = &Incident{Start: ts, PeakMS: v, Direction: direction, Source: "probe"}
+		} else if v > cur.PeakMS {
+			cur.PeakMS = v
+		}
+		readings++
+		lastBad = ts
+	}
+	flush()
 	return eps
 }
 
