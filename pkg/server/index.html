@@ -548,7 +548,14 @@
 
       <!-- Trends: percentiles and reliability over the last day -->
       <section class="sect" id="ov-trends-sect">
-        <div class="sect-head"><h2 class="h2">Trends <span class="sub">last 24 hours</span></h2></div>
+        <div class="sect-head">
+          <h2 class="h2">Trends <span class="sub" id="ov-trend-sub">last 24 hours</span></h2>
+          <div class="seg" role="group" aria-label="Trends range">
+            <button data-trange="24h" class="trange-btn">24H</button>
+            <button data-trange="7d"  class="trange-btn">7D</button>
+            <button data-trange="30d" class="trange-btn">30D</button>
+          </div>
+        </div>
         <div id="ov-trend-strip" class="meters"></div>
       </section>
 
@@ -571,7 +578,7 @@
 
       <!-- Shaper utilisation and AQM activity trends -->
       <section class="sect" id="sqm-trends-sect">
-        <div class="sect-head"><h2 class="h2">Shaper trends <span class="sub">last 24 hours</span></h2></div>
+        <div class="sect-head"><h2 class="h2">Shaper trends <span class="sub" id="sqm-trend-sub">last 24 hours</span></h2></div>
         <div id="sqm-trend-strip" class="meters"></div>
       </section>
     </section>
@@ -596,7 +603,7 @@
 
       <!-- Wi-Fi quality trends -->
       <section class="sect" id="cl-trends-sect">
-        <div class="sect-head"><h2 class="h2">Wi-Fi trends <span class="sub">last 24 hours</span></h2></div>
+        <div class="sect-head"><h2 class="h2">Wi-Fi trends <span class="sub" id="cl-trend-sub">last 24 hours</span></h2></div>
         <div id="cl-trend-strip" class="rows"></div>
       </section>
 
@@ -2314,6 +2321,8 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       if (sr) { sysRange = sr.dataset.sysrange; _setPillBtns('.sysrange-btn', 'sysrange', sysRange); loadSystemHistory(); }
       const pr = e.target.closest('.pctrange-btn');
       if (pr) { sysPctRange = pr.dataset.pctrange; _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange); loadLatencyQuality(); }
+      const tr = e.target.closest('.trange-btn');
+      if (tr) { trendRange = tr.dataset.trange; _setPillBtns('.trange-btn', 'trange', trendRange); loadTrendsPanels(); }
       const wr = e.target.closest('.wanrange-btn');
       if (wr) { wanRange = wr.dataset.wanrange; _setPillBtns('.wanrange-btn', 'wanrange', wanRange); loadDiagWanChart(); }
       const ir = e.target.closest('.incrange-btn');
@@ -2699,6 +2708,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
     // ── System tab: tunnel, connection table, latency quality, incidents ──
 
     let sysPctRange = '24h';
+    let trendRange = '24h';   // shared by the Overview / SQM / Clients trend strips
     let sysIncRange = '24h';
     let ovInc = null;   // last /api/incidents?range=24h (Overview footer)
 
@@ -2850,10 +2860,15 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
     async function loadTrendsPanels() {
       let d;
       try {
-        d = await fetch(appURL('/api/percentiles?range=24h')).then(r => r.json());
+        d = await fetch(appURL('/api/percentiles?range=' + trendRange)).then(r => r.json());
       } catch (_) { return; }
       const t = d && d.trends;
       if (!t) return;
+      const rw = 'last ' + rangeWord(trendRange);
+      ['ov-trend-sub', 'sqm-trend-sub', 'cl-trend-sub'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = rw;
+      });
 
       // ── Overview: latency, loss, reliability, headroom ──────────────
       const ov = document.getElementById('ov-trend-strip');
@@ -2876,7 +2891,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
           'CPU p95' + (t.headroom.temp_max ? ' &middot; peak ' + t.headroom.temp_max.toFixed(0) + '°C' : ''));
         if (t.wifi_clients) html += trendCard('Wi-Fi busy', t.wifi_clients.p95.toFixed(0) + ' clients', 'p95 concurrent');
         html += trendCard('Line stability', t.wan_changes === 0 ? 'no drops' : t.wan_changes + ' change' + (t.wan_changes === 1 ? '' : 's'),
-          'PPPoE session transitions · 24h');
+          'PPPoE session transitions · ' + trendRange);
         ov.innerHTML = html || '<p class="note">No trend history yet — numbers appear as VictoriaMetrics collects.</p>';
       }
 
@@ -2888,12 +2903,12 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
           const sh = t.shaper && t.shaper[k];
           if (sh && sh.ceiling_mbps > 0) {
             html += trendCard(label + ' utilisation', sh.p95_mbps.toFixed(0) + ' <span class="ro-unit">/ ' + sh.ceiling_mbps.toFixed(0) + ' Mbit/s</span>',
-              'p95 vs ceiling' + (sh.pinned_pct >= 0.1 ? ' — pinned above 90% for ' + sh.pinned_pct.toFixed(1) + '% of the day' : ' — ceiling holds comfortably'));
+              'p95 vs ceiling' + (sh.pinned_pct >= 0.1 ? ' — pinned above 90% for ' + sh.pinned_pct.toFixed(1) + '% of the period' : ' — ceiling holds comfortably'));
           }
           const a = t.aqm && t.aqm[k];
           if (a) {
             html += trendCard(label + ' AQM', a.marks.toFixed(0) + ' <span class="ro-unit">marks</span> · ' + a.drops.toFixed(0) + ' <span class="ro-unit">drops</span>',
-              'in 24h &middot; queue p95 ' + a.peak_delay_p95.toFixed(2) + ' ms of the ' + a.target_ms.toFixed(1) + ' ms target');
+              'in ' + trendRange + ' &middot; queue p95 ' + a.peak_delay_p95.toFixed(2) + ' ms of the ' + a.target_ms.toFixed(1) + ' ms target');
           }
         });
         sqm.innerHTML = html || '<p class="note">No SQM history yet — the shaper trends appear as collectd accumulates a day of data.</p>';
@@ -2904,13 +2919,13 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       if (cl) {
         let html = '';
         if (t.wifi_clients) {
-          html += trendCard('Concurrent Wi-Fi clients', t.wifi_clients.p95.toFixed(0), 'p95 · last 24h');
+          html += trendCard('Concurrent Wi-Fi clients', t.wifi_clients.p95.toFixed(0), 'p95 · last ' + rangeWord(trendRange));
         }
         (t.wifi_devices || []).forEach(w => {
           const nm = (w.name && w.name !== 'unknown') ? w.name : w.mac.slice(0, 8);
           html += trendCard(nm + ' <span class="sub">' + w.band + '</span>',
             w.signal_p95.toFixed(0) + ' <span class="ro-unit">% signal</span>',
-            'worst 5% of the day' + (w.link_p95 ? ' &middot; link p95 ' + w.link_p95.toFixed(0) + ' Mbit/s' : '') +
+            'worst 5%' + (w.link_p95 ? ' &middot; link p95 ' + w.link_p95.toFixed(0) + ' Mbit/s' : '') +
             ' &middot; seen ' + w.present_pct.toFixed(0) + '%');
         });
         cl.innerHTML = html || '<p class="note">No Wi-Fi history yet — trends appear after the Orbi poller has run for a while.</p>';
@@ -3553,6 +3568,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
     // ── Boot ──────────────────────────────────────────────────────────────
     seedHistory(); // seed sparklines and the tape from the server ring buffer before first SSE
     _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange);
+    _setPillBtns('.trange-btn', 'trange', trendRange);
     _setPillBtns('.clrange-btn', 'clrange', clientsRange);
     _setPillBtns('.sysrange-btn', 'sysrange', sysRange);
     _setPillBtns('.tape-btn', 'tape', tapeRange);
