@@ -49,37 +49,39 @@ type sample struct {
 
 // Store keeps the latest client snapshot and runs the poller.
 type Store struct {
-	mu         sync.RWMutex
-	clients    map[string]*Client // by MAC
-	prev       map[string]sample
-	seen       map[string]time.Time // MAC -> last successful poll listing it (drives eviction; unlike Client.LastSeen it ignores traffic)
-	prevAt     time.Time
-	interval   time.Duration
-	vmc        *vm.Client
-	nlbwPath   string
-	leasesAt   time.Time
-	leases     map[string]string // MAC -> hostname (refreshed every 10 min)
-	hosts      map[string]string // IP -> hostname from /etc/hosts
-	vendors    map[string]string // OUI -> vendor name (cached + persisted)
-	namesAt    time.Time         // gate for the slow name-resolution cycle
-	namesPath  string            // persisted vendor cache
-	httpClient *http.Client
-	havePolled bool
+	mu          sync.RWMutex
+	clients     map[string]*Client // by MAC
+	prev        map[string]sample
+	seen        map[string]time.Time // MAC -> last successful poll listing it (drives eviction; unlike Client.LastSeen it ignores traffic)
+	prevAt      time.Time
+	interval    time.Duration
+	vmc         *vm.Client
+	nlbwPath    string
+	leasesAt    time.Time
+	leases      map[string]string // MAC -> hostname (refreshed every 10 min)
+	staticHosts map[string]string // MAC -> static lease name from /etc/config/dhcp
+	hosts       map[string]string // IP -> hostname from /etc/hosts
+	vendors     map[string]string // OUI -> vendor name (cached + persisted)
+	namesAt     time.Time         // gate for the slow name-resolution cycle
+	namesPath   string            // persisted vendor cache
+	httpClient  *http.Client
+	havePolled  bool
 }
 
 // New creates a Store. vmURL may be empty to disable history pushes.
 func New(interval time.Duration, vmURL string) *Store {
 	s := &Store{
-		clients:    map[string]*Client{},
-		prev:       map[string]sample{},
-		seen:       map[string]time.Time{},
-		interval:   interval,
-		leases:     map[string]string{},
-		hosts:      map[string]string{},
-		vendors:    map[string]string{},
-		namesPath:  "/tmp/cake-client-names.json",
-		nlbwPath:   "/usr/sbin/nlbw",
-		httpClient: &http.Client{Timeout: 5 * time.Second},
+		clients:     map[string]*Client{},
+		prev:        map[string]sample{},
+		seen:        map[string]time.Time{},
+		interval:    interval,
+		leases:      map[string]string{},
+		staticHosts: map[string]string{},
+		hosts:       map[string]string{},
+		vendors:     map[string]string{},
+		namesPath:   "/tmp/cake-client-names.json",
+		nlbwPath:    "/usr/sbin/nlbw",
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
 	}
 	if p, err := exec.LookPath("nlbw"); err == nil {
 		s.nlbwPath = p
@@ -322,6 +324,56 @@ func (s *Store) refreshLeases() {
 		leases[mac] = host
 	}
 	s.leases = leases
+	s.refreshStaticHosts()
+}
+
+// refreshStaticHosts reads MAC -> name from the static DHCP lease entries in
+// /etc/config/dhcp. Unlike the live lease file, this works for devices that
+// are powered off and have never contacted dnsmasq since the lease was added.
+func (s *Store) refreshStaticHosts() {
+	out, err := exec.Command("cat", "/etc/config/dhcp").Output()
+	if err != nil {
+		return
+	}
+	s.parseStaticHosts(string(out))
+}
+
+// parseStaticHosts parses UCI dhcp config text into the staticHosts map.
+func (s *Store) parseStaticHosts(conf string) {
+	static := map[string]string{}
+	inHost := false
+	var name, mac string
+	flush := func() {
+		if inHost && name != "" && mac != "" {
+			static[mac] = name
+		}
+		name, mac = "", ""
+	}
+	for _, line := range strings.Split(conf, "\n") {
+		f := strings.Fields(strings.TrimSpace(line))
+		if len(f) == 0 {
+			continue
+		}
+		switch {
+		case f[0] == "config" && len(f) > 1 && f[1] == "host":
+			flush()
+			inHost = true
+		case f[0] == "config":
+			flush()
+			inHost = false
+		case inHost && f[0] == "option" && len(f) >= 3:
+			key := f[1]
+			val := strings.Trim(strings.Join(f[2:], " "), "'\"")
+			switch key {
+			case "name":
+				name = val
+			case "mac":
+				mac = strings.ToLower(val)
+			}
+		}
+	}
+	flush()
+	s.staticHosts = static
 }
 
 // refreshHosts reads static IP -> hostname mappings from /etc/hosts.
@@ -454,6 +506,9 @@ func cleanVendor(v string) string {
 // /etc/hosts by IP, then vendor-derived, then a stable device-xxxx fallback.
 func (s *Store) nameFor(mac, ip string) string {
 	if name := s.leases[mac]; name != "" {
+		return name
+	}
+	if name := s.staticHosts[mac]; name != "" {
 		return name
 	}
 	if ip != "" {
