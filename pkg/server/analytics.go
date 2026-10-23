@@ -65,22 +65,18 @@ func (s *Server) handleAPIPercentiles(c fiber.Ctx) error {
 		return c.Status(503).SendString(`{"error":"victoriametrics not configured"}`)
 	}
 	rng := c.Query("range", "24h")
-	if rng != "24h" && rng != "7d" && rng != "30d" {
-		return c.Status(400).SendString(`{"error":"range must be one of 24h,7d,30d"}`)
+	w, werr := parseTrendWindow(rng, c.Query("start"), c.Query("end"), time.Now().Unix())
+	if werr != nil {
+		return c.Status(400).SendString(`{"error":"` + werr.Error() + `"}`)
 	}
-	end := time.Now().Unix()
-	start := rangeStart(rng, end)
+	end := w.End
+	start := w.Start
 	ctx, cancel := context.WithTimeout(c.Context(), 10*time.Second)
 	defer cancel()
 
-	step := "60s"
-	if rng == "7d" {
-		step = "600s"
-	} else if rng == "30d" {
-		step = "1800s"
-	}
+	step := w.step()
 
-	out := PercentileReport{Range: rng}
+	out := PercentileReport{Range: w.Label}
 
 	// WAN RTT per probe target (1.1.1.1, 8.8.8.8 — whatever collectd pings).
 	if series, err := s.vmc.QueryRange(ctx, `collectd_ping`, start, end, step); err == nil {
@@ -113,7 +109,7 @@ func (s *Server) handleAPIPercentiles(c fiber.Ctx) error {
 
 	// Cross-panel trend aggregates (shaper, AQM, headroom, Wi-Fi, grades,
 	// reliability) — all reads over series that already exist in VM.
-	s.addTrends(ctx, &out, rng, start, end)
+	s.addTrends(ctx, &out, w)
 
 	c.Set("Content-Type", "application/json; charset=utf-8")
 	b, _ := json.Marshal(out)

@@ -170,7 +170,13 @@ func (c *Client) fetchRange(ctx context.Context, u string) ([]Series, error) {
 				continue
 			}
 			ts, _ := v[0].(float64)
-			val, _ := strconv.ParseFloat(v[1].(string), 64)
+			// The sample value must be a JSON string; null or a number
+			// would panic on a bare assertion, so skip malformed pairs.
+			vs, ok := v[1].(string)
+			if !ok {
+				continue
+			}
+			val, _ := strconv.ParseFloat(vs, 64)
 			s.TS = append(s.TS, int64(ts))
 			s.Val = append(s.Val, val)
 		}

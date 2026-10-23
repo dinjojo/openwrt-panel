@@ -351,8 +351,8 @@ func (s *Store) resolveVendors() {
 	n := 0
 	for mac := range s.clients {
 		oui := macToOUI(mac)
-		if oui == "" {
-			continue
+		if oui == "" || oui == "randomized" {
+			continue // no OUI, or privacy MAC: a vendor lookup is pointless
 		}
 		if _, done := s.vendors[oui]; done {
 			continue
@@ -361,7 +361,11 @@ func (s *Store) resolveVendors() {
 			break
 		}
 		vendor := s.queryVendor(oui)
-		s.vendors[oui] = vendor
+		if vendor != "" {
+			// Empty means a transient failure (offline, rate limited):
+			// leave the OUI uncached so the next cycle retries.
+			s.vendors[oui] = vendor
+		}
 		n++
 		if n < maxLookups {
 			time.Sleep(1100 * time.Millisecond) // stay under the 1 rps limit

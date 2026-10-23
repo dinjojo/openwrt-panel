@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata" // IANA zones for -tz on routers without /usr/share/zoneinfo
@@ -34,6 +35,9 @@ func main() {
 	orbiURL := flag.String("orbi-url", os.Getenv("ORBI_URL"), "Orbi AP base URL, e.g. http://192.168.1.100 (empty disables Orbi monitoring)")
 	orbiUser := flag.String("orbi-user", os.Getenv("ORBI_USER"), "Orbi admin user")
 	orbiPass := flag.String("orbi-pass", os.Getenv("ORBI_PASS"), "Orbi admin password")
+	// Root-only KEY=VALUE file the binary reads itself: Orbi settings reach
+	// the process without appearing in ps, /proc cmdline or ubus.
+	orbiConf := flag.String("orbi-conf", os.Getenv("ORBI_CONF"), "KEY=VALUE file with ORBI_URL, ORBI_USER, ORBI_PASS, ORBI_SSH_USER, ORBI_SSH_PASS, ORBI_TELNET_PASS; values already set via flags or environment win")
 	// Shell access to the Orbi for per-client radio stats. The host is the
 	// -orbi-url host. Never logged; keep the values in a root-only env file.
 	orbiSSHUser := flag.String("orbi-ssh-user", os.Getenv("ORBI_SSH_USER"), "Orbi SSH user for per-client Wi-Fi stats (default root when -orbi-ssh-pass is set)")
@@ -57,6 +61,29 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+
+	// Orbi settings from a root-only conf file: any flag or environment
+	// value that was set explicitly wins over the file.
+	if *orbiConf != "" {
+		if conf, err := readKVFile(*orbiConf); err != nil {
+			log.Logger.Warn().Err(err).Str("file", *orbiConf).Msg("cannot read -orbi-conf; continuing without it")
+		} else {
+			explicit := map[string]bool{}
+			flag.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+			for _, e := range []struct{ key, flag string; val *string }{
+				{"ORBI_URL", "orbi-url", orbiURL},
+				{"ORBI_USER", "orbi-user", orbiUser},
+				{"ORBI_PASS", "orbi-pass", orbiPass},
+				{"ORBI_SSH_USER", "orbi-ssh-user", orbiSSHUser},
+				{"ORBI_SSH_PASS", "orbi-ssh-pass", orbiSSHPass},
+				{"ORBI_TELNET_PASS", "orbi-telnet-pass", orbiTelnetPass},
+			} {
+				if v, ok := conf[e.key]; ok && !explicit[e.flag] && *e.val == os.Getenv(e.key) {
+					*e.val = v
+				}
+			}
+		}
+	}
 
 	if *showVer {
 		fmt.Printf("cake-stats %s\n", Version)
@@ -120,4 +147,25 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// readKVFile parses a KEY=VALUE file (comments with #, blank lines ignored).
+func readKVFile(path string) (map[string]string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
+	}
+	return out, nil
 }

@@ -10,6 +10,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sort"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 
 // TrendPair is p50/p95/p99 of one measurement over the selected range.
 type TrendPair struct {
+	Name    string  `json:"name,omitempty"` // ping target label, when known
 	P50     float64 `json:"p50"`
 	P95     float64 `json:"p95"`
 	P99     float64 `json:"p99"`
@@ -84,46 +86,156 @@ type TrendReport struct {
 	WanP99Loss  float64                `json:"wan_p99_loss"`
 }
 
-// trendRanges maps the report range to a PromQL range selector string.
-func trendRangeSelector(rng string) string {
-	return rng // "24h", "7d", "30d" are already valid selectors
+// trendWindow is the parsed query window behind a trends report: either a
+// named preset (24h, 7d, 30d, …) or an explicit start/end pair from the UI's
+// custom time picker.
+type trendWindow struct {
+	Label string // preset key or "custom", echoed back to the UI
+	Start int64  // unix seconds
+	End   int64  // unix seconds
+}
+
+func (w trendWindow) dur() int64 { return w.End - w.Start }
+
+// sel is the MetricsQL bracket expression for instant queries, anchored at
+// End so windows that end in the past still evaluate over the right interval.
+func (w trendWindow) sel() string {
+	return fmt.Sprintf("[%s] @ %d", durStr(w.dur()), w.End)
+}
+
+// step picks a range-query step coarse enough to keep long windows cheap.
+func (w trendWindow) step() string {
+	switch h := w.dur() / 3600; {
+	case h <= 24:
+		return "120s"
+	case h <= 168:
+		return "900s"
+	default:
+		return "3600s"
+	}
+}
+
+// expectedSamples is how many step points a full window should hold.
+func (w trendWindow) expectedSamples() float64 {
+	st := map[string]float64{"120s": 120, "900s": 900, "3600s": 3600}[w.step()]
+	if st == 0 {
+		return 1
+	}
+	return float64(w.dur()) / st
+}
+
+// trendPresets are the named windows, in whole hours.
+var trendPresets = map[string]int64{
+	"6h": 6, "12h": 12, "24h": 24, "3d": 72, "7d": 168, "14d": 336, "30d": 720, "90d": 2160,
+}
+
+// parseTrendWindow resolves the percentiles request's window from either
+// range=<preset> or start=<unix>&end=<unix>. Custom windows are clamped to
+// [1h, 90d] and to the recent past.
+func parseTrendWindow(rng, startQ, endQ string, now int64) (trendWindow, error) {
+	if startQ == "" {
+		h, ok := trendPresets[rng]
+		if !ok {
+			return trendWindow{}, fmt.Errorf("range must be one of 6h,12h,24h,3d,7d,14d,30d,90d — or pass start/end")
+		}
+		return trendWindow{Label: rng, End: now, Start: now - h*3600}, nil
+	}
+	start, err := strconv.ParseInt(startQ, 10, 64)
+	if err != nil || start <= 0 {
+		return trendWindow{}, fmt.Errorf("start must be a unix timestamp")
+	}
+	end := now
+	if endQ != "" {
+		if e, perr := strconv.ParseInt(endQ, 10, 64); perr == nil && e > 0 {
+			end = e
+		}
+	}
+	if end > now {
+		end = now
+	}
+	if end-start < 3600 {
+		return trendWindow{}, fmt.Errorf("window must be at least 1 hour")
+	}
+	if end-start > 90*24*3600 {
+		return trendWindow{}, fmt.Errorf("window must be at most 90 days")
+	}
+	return trendWindow{Label: "custom", Start: start, End: end}, nil
+}
+
+// durStr renders a duration the way MetricsQL selectors want it: whole days
+// as "Nd", whole hours as "Nh", otherwise a compound "NhMmSs".
+func durStr(sec int64) string {
+	if sec%3600 == 0 {
+		if d := sec / 86400; d != 0 && sec%86400 == 0 {
+			return fmt.Sprintf("%dd", d)
+		}
+		return fmt.Sprintf("%dh", sec/3600)
+	}
+	s := ""
+	if r := sec % 60; r != 0 {
+		s = fmt.Sprintf("%ds", r)
+		sec -= r
+	}
+	if r := (sec % 3600) / 60; r != 0 {
+		s = fmt.Sprintf("%dm%s", r, s)
+		sec -= sec % 3600
+	}
+	if h := sec / 3600; h != 0 {
+		s = fmt.Sprintf("%dh%s", h, s)
+	}
+	return s
 }
 
 // addTrends fills the trend fields of the percentiles response. Every query
 // is best-effort: a failed or empty series leaves the field absent and the
 // UI renders an honest "no data" note instead of zeros.
-func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng string, start, end int64) {
-	tr := TrendReport{Range: rng, Shaper: map[string]ShaperTrend{}, AQM: map[string]AQMTrend{}, Bloat: map[string][]BloatDay{}}
+func (s *Server) addTrends(ctx context.Context, out *PercentileReport, w trendWindow) {
+	tr := TrendReport{Range: w.Label, Shaper: map[string]ShaperTrend{}, AQM: map[string]AQMTrend{}, Bloat: map[string][]BloatDay{}}
 
 	// ── Latency percentiles per ping target ──────────────────────────
-	targets, _ := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.99, collectd_ping[%s])`, trendRangeSelector(rng)))
+	p99s, _ := s.vmc.Query(ctx,
+		fmt.Sprintf(`quantile_over_time(0.99, collectd_ping%s)`, w.sel()))
 	p95s, _ := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.95, collectd_ping[%s])`, trendRangeSelector(rng)))
+		fmt.Sprintf(`quantile_over_time(0.95, collectd_ping%s)`, w.sel()))
 	p50s, _ := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.50, collectd_ping[%s])`, trendRangeSelector(rng)))
+		fmt.Sprintf(`quantile_over_time(0.50, collectd_ping%s)`, w.sel()))
 	counts, _ := s.vmc.Query(ctx,
-		fmt.Sprintf(`count_over_time(collectd_ping[%s])`, trendRangeSelector(rng)))
-	if len(p95s) > 0 {
-		p99By, p50By, cntBy := pointsByLabel(targets, "ping"), pointsByLabel(p50s, "ping"), pointsByLabel(counts, "ping")
-		for _, pt := range p95s {
+		fmt.Sprintf(`count_over_time(collectd_ping%s)`, w.sel()))
+	// Normalise the label once: collectd leaves it empty for the default
+	// target, and every lookup must use the same key.
+	norm := func(pts []vm.Point) map[string]vm.Point {
+		m := make(map[string]vm.Point, len(pts))
+		for _, pt := range pts {
 			name := pt.Labels["ping"]
 			if name == "" {
 				name = "wan"
 			}
-			tp := TrendPair{P95: pt.Val, Samples: int(cntBy[name])}
-			if v, ok := p50By[name]; ok {
-				tp.P50 = v
-			}
-			if v, ok := p99By[name]; ok {
-				tp.P99 = v
-			}
-			tr.Latency = append(tr.Latency, tp)
+			m[name] = pt
 		}
-		sort.Slice(tr.Latency, func(i, j int) bool { return tr.Latency[i].Samples > tr.Latency[j].Samples })
+		return m
 	}
+	p99By, p50By, p95By, cntBy := norm(p99s), norm(p50s), norm(p95s), norm(counts)
+	for name, pt := range p95By {
+		tp := TrendPair{Name: name, P95: pt.Val}
+		if v, ok := p50By[name]; ok {
+			tp.P50 = v.Val
+		}
+		if v, ok := p99By[name]; ok {
+			tp.P99 = v.Val
+		}
+		if v, ok := cntBy[name]; ok {
+			tp.Samples = int(v.Val)
+		}
+		tr.Latency = append(tr.Latency, tp)
+	}
+	sort.Slice(tr.Latency, func(i, j int) bool {
+		if tr.Latency[i].Samples != tr.Latency[j].Samples {
+			return tr.Latency[i].Samples > tr.Latency[j].Samples
+		}
+		return tr.Latency[i].Name < tr.Latency[j].Name
+	})
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`avg_over_time(collectd_ping_ping_stddev[%s])`, trendRangeSelector(rng))); err == nil {
+		fmt.Sprintf(`avg_over_time(collectd_ping_ping_stddev%s)`, w.sel())); err == nil {
 		for _, pt := range se {
 			tr.Stddev = pt.Val
 		}
@@ -133,37 +245,28 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 	// Throughput: the "tx" byte counter on the whole-interface series.
 	for _, dir := range []struct{ key, iface string }{{"down", "ifb4eth0"}, {"up", "eth0"}} {
 		st := ShaperTrend{}
-		if se, err := s.vmc.QueryRange(ctx,
-			fmt.Sprintf(`sum(rate(collectd_sqm_bytes{type="tx",sqm="%s"}[5m]))*8`, dir.iface),
-			start, end, rangeStep(rng)); err == nil && len(se) > 0 {
-			st.P95Mbps = percentile(se[0].Val, 95) / 1e6
-			st.Samples = len(se[0].Val)
-		}
 		if se, err := s.vmc.Query(ctx,
 			fmt.Sprintf(`max(collectd_sqm_gauge{type="configured_bw_bps",sqm="%s"})`, dir.iface)); err == nil && len(se) > 0 {
 			// tc reports cake's bandwidth option in bytes/s — convert to Mbit/s.
 			st.CeilingMbps = se[0].Val * 8 / 1e6
 		}
-		if st.P95Mbps > 0 && st.CeilingMbps > 0 && st.Samples > 0 {
-			tr.Shaper[dir.key] = st
-		}
-	}
-	// Pinned % needs the rate samples again; compute here where we have them.
-	for _, dir := range []struct{ key, iface string }{{"down", "ifb4eth0"}, {"up", "eth0"}} {
-		st, ok := tr.Shaper[dir.key]
-		if !ok || st.CeilingMbps <= 0 {
-			continue
-		}
 		if se, err := s.vmc.QueryRange(ctx,
 			fmt.Sprintf(`sum(rate(collectd_sqm_bytes{type="tx",sqm="%s"}[5m]))*8`, dir.iface),
-			start, end, rangeStep(rng)); err == nil && len(se) > 0 {
-			pinned := 0
-			for _, v := range se[0].Val {
-				if v/1e6 >= 0.9*st.CeilingMbps {
-					pinned++
+			w.Start, w.End, w.step()); err == nil && len(se) > 0 {
+			st.P95Mbps = percentile(se[0].Val, 95) / 1e6
+			st.Samples = len(se[0].Val)
+			if st.CeilingMbps > 0 {
+				// % of samples pinned above 90% of the ceiling.
+				pinned := 0
+				for _, v := range se[0].Val {
+					if v/1e6 >= 0.9*st.CeilingMbps {
+						pinned++
+					}
 				}
+				st.PinnedPct = 100 * float64(pinned) / float64(len(se[0].Val))
 			}
-			st.PinnedPct = 100 * float64(pinned) / float64(len(se[0].Val))
+		}
+		if st.P95Mbps > 0 && st.CeilingMbps > 0 && st.Samples > 0 {
 			tr.Shaper[dir.key] = st
 		}
 	}
@@ -172,8 +275,8 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 	// CAKE gauges live on the per-tin series: eth0-tin-t0 (upload),
 	// ifb4eth0-tin-t0 (download).
 	aqm, _ := s.vmc.Query(ctx,
-		fmt.Sprintf(`sum by (type, sqm) (increase(collectd_sqm_gauge{type=~"ecn_marks|drops",sqm=~"(eth0|ifb4eth0)-tin.*"}[%s]))`,
-			trendRangeSelector(rng)))
+		fmt.Sprintf(`sum by (type, sqm) (increase(collectd_sqm_gauge{type=~"ecn_marks|drops",sqm=~"(eth0|ifb4eth0)-tin.*"}%s))`,
+			w.sel()))
 	aqmBy := func(typ, iface string) float64 {
 		for _, pt := range aqm {
 			if pt.Labels["type"] == typ && pt.Labels["sqm"] == iface+"-tin-t0" {
@@ -183,8 +286,8 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 		return 0
 	}
 	peakP95, _ := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.95, collectd_sqm_gauge{type="peak_delay_us",sqm=~"(eth0|ifb4eth0)-tin.*"}[%s])/1000`,
-			trendRangeSelector(rng)))
+		fmt.Sprintf(`quantile_over_time(0.95, collectd_sqm_gauge{type="peak_delay_us",sqm=~"(eth0|ifb4eth0)-tin.*"}%s)/1000`,
+			w.sel()))
 	targetMs, _ := s.vmc.Query(ctx, `max(collectd_sqm_gauge{type="target_us"})/1000`)
 	target := 5.0
 	if len(targetMs) > 0 {
@@ -214,11 +317,11 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 	h := HeadroomTrend{}
 	// CPU busy %: collectd reports per-core, per-type percentages, so busy
 	// is 100 minus the per-core idle average across the range.
-	if se, err := s.vmc.QueryRange(ctx, `100 - avg(collectd_cpu_percent{type="idle"})`, start, end, rangeStep(rng)); err == nil && len(se) > 0 {
+	if se, err := s.vmc.QueryRange(ctx, `100 - avg(collectd_cpu_percent{type="idle"})`, w.Start, w.End, w.step()); err == nil && len(se) > 0 {
 		h.CPUP95 = percentile(se[0].Val, 95)
 	}
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`max_over_time(collectd_thermal_temperature[%s])`, trendRangeSelector(rng))); err == nil && len(se) > 0 {
+		fmt.Sprintf(`max_over_time(collectd_thermal_temperature%s)`, w.sel())); err == nil && len(se) > 0 {
 		for _, pt := range se {
 			if pt.Val > h.TempMax {
 				h.TempMax = pt.Val
@@ -226,11 +329,11 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 		}
 	}
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.95, collectd_conntrack{conntrack=""}[%s])`, trendRangeSelector(rng))); err == nil && len(se) > 0 {
+		fmt.Sprintf(`quantile_over_time(0.95, collectd_conntrack{conntrack=""}%s)`, w.sel())); err == nil && len(se) > 0 {
 		h.ConntrackP95 = se[0].Val
 	}
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.95, collectd_load_0[%s])`, trendRangeSelector(rng))); err == nil && len(se) > 0 {
+		fmt.Sprintf(`quantile_over_time(0.95, collectd_load_0%s)`, w.sel())); err == nil && len(se) > 0 {
 		h.LoadP95 = se[0].Val
 	}
 	if h.CPUP95 > 0 || h.TempMax > 0 || h.ConntrackP95 > 0 {
@@ -239,14 +342,15 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 
 	// ── Wi-Fi quality ────────────────────────────────────────────────
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.95, orbi_wifi_clients[%s])`, trendRangeSelector(rng))); err == nil && len(se) > 0 {
+		fmt.Sprintf(`quantile_over_time(0.95, orbi_wifi_clients%s)`, w.sel())); err == nil && len(se) > 0 {
 		tr.WifiClients = &TrendPair{P95: se[0].Val}
 	}
-	if se, err := s.vmc.QueryRange(ctx, `orbi_client_signal`, start, end, rangeStep(rng)); err == nil {
+	if se, err := s.vmc.QueryRange(ctx, `orbi_client_signal`, w.Start, w.End, w.step()); err == nil {
 		type dev struct {
 			name, band, mac string
 			vals            []float64
 			link            []float64
+			series          int // signal series seen for this MAC (can span bands)
 		}
 		byMac := map[string]*dev{}
 		for _, series := range se {
@@ -264,8 +368,9 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 					d.vals = append(d.vals, v)
 				}
 			}
+			d.series++
 		}
-		if ls, err := s.vmc.QueryRange(ctx, `orbi_client_linkspeed`, start, end, rangeStep(rng)); err == nil {
+		if ls, err := s.vmc.QueryRange(ctx, `orbi_client_linkspeed`, w.Start, w.End, w.step()); err == nil {
 			for _, series := range ls {
 				if d := byMac[series.Labels["mac"]]; d != nil {
 					d.link = append(d.link, series.Val...)
@@ -287,7 +392,7 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 			wd := WifiDeviceTrend{
 				Name: d.name, MAC: d.mac, Band: d.band,
 				SignalP50: wt.P50, SignalP95: wt.P95,
-				PresentPct: 100 * float64(len(d.vals)) / float64(expectedSamples(rng, rangeStep(rng))),
+				PresentPct: 100 * float64(len(d.vals)) / float64(float64(d.series)*w.expectedSamples()),
 			}
 			if len(d.link) > 0 {
 				wd.LinkP95 = percentile(d.link, 95)
@@ -301,20 +406,20 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 		tr.WifiDevices = devices
 	}
 
-	// ── Bufferbloat grade history (always 30d — grades are hourly) ───
-	hStart := time.Now().Add(-30 * 24 * time.Hour).Unix()
+	// ── Bufferbloat grade history (daily buckets over the window) ─────
+	hStart := w.Start
 	for _, dir := range []struct{ key, label string }{{"down", "down"}, {"up", "up"}} {
 		raw, err := s.vmc.QueryRaw(ctx,
-			fmt.Sprintf(`probe_bloat_ms{direction="%s"}`, dir.label), hStart, end)
+			fmt.Sprintf(`probe_bloat_ms{direction="%s"}`, dir.label), hStart, w.End)
 		if err != nil {
 			continue
 		}
 		grades, _ := s.vmc.QueryRaw(ctx,
-			fmt.Sprintf(`probe_bloat_grade{direction="%s"}`, dir.label), hStart, end)
+			fmt.Sprintf(`probe_bloat_grade{direction="%s"}`, dir.label), hStart, w.End)
 		gradeByDay := map[string][]string{}
 		for _, se := range grades {
 			for _, ts := range se.TS {
-				day := time.Unix(ts, 0).Format("2006-01-02")
+				day := time.Unix(ts, 0).In(s.loc).Format("2006-01-02")
 				if g := se.Labels["grade"]; g != "" {
 					gradeByDay[day] = append(gradeByDay[day], g)
 				}
@@ -324,7 +429,7 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 		var order []string
 		for _, se := range raw {
 			for i, v := range se.Val {
-				day := time.Unix(se.TS[i], 0).Format("2006-01-02")
+				day := time.Unix(se.TS[i], 0).In(s.loc).Format("2006-01-02")
 				// loaded RTT can sit a hair below idle from jitter; that is
 				// noise, not negative bloat.
 				if v < 0 {
@@ -358,44 +463,13 @@ func (s *Server) addTrends(ctx context.Context, out *PercentileReport, rng strin
 
 	// ── Reliability ledger ───────────────────────────────────────────
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`quantile_over_time(0.99, collectd_ping_ping_droprate[%s])`, trendRangeSelector(rng))); err == nil && len(se) > 0 {
+		fmt.Sprintf(`quantile_over_time(0.99, collectd_ping_ping_droprate%s)`, w.sel())); err == nil && len(se) > 0 {
 		tr.WanP99Loss = se[0].Val
 	}
 	if se, err := s.vmc.Query(ctx,
-		fmt.Sprintf(`changes(wan_session_up[%s])`, trendRangeSelector(rng))); err == nil && len(se) > 0 {
+		fmt.Sprintf(`changes(wan_session_up%s)`, w.sel())); err == nil && len(se) > 0 {
 		tr.WanChanges = int(se[0].Val)
 	}
 
 	out.Trends = &tr
-}
-
-// pointsByLabel indexes instant-query points by one label's value.
-func pointsByLabel(points []vm.Point, label string) map[string]float64 {
-	m := make(map[string]float64, len(points))
-	for _, pt := range points {
-		m[pt.Labels[label]] = pt.Val
-	}
-	return m
-}
-
-// rangeStep picks a query step coarse enough to keep ranges cheap.
-func rangeStep(rng string) string {
-	switch rng {
-	case "24h":
-		return "120s"
-	case "7d":
-		return "900s"
-	default:
-		return "3600s"
-	}
-}
-
-// expectedSamples is how many range-step points a full range should hold.
-func expectedSamples(rng, step string) float64 {
-	dur := map[string]float64{"24h": 86400, "7d": 604800, "30d": 2592000}[rng]
-	st := map[string]float64{"60s": 60, "120s": 120, "900s": 900, "1800s": 1800, "3600s": 3600}[step]
-	if dur == 0 || st == 0 {
-		return 1
-	}
-	return dur / st
 }

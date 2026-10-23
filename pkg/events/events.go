@@ -8,8 +8,11 @@ package events
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/galpt/cake-stats/pkg/log"
 )
 
 // Event is one notable occurrence.
@@ -48,7 +51,11 @@ func (s *Store) SetHook(fn func(kind, sev, msg string)) {
 func New(path string) *Store {
 	s := &Store{path: path}
 	if b, err := os.ReadFile(path); err == nil {
-		if _ = json.Unmarshal(b, &s.events); err == nil {
+		if err := json.Unmarshal(b, &s.events); err != nil {
+			// A corrupt file must not silently look like an empty store
+			// that then overwrites the history on first persist.
+			log.Logger.Warn().Err(err).Str("file", path).Msg("corrupt event history, starting fresh")
+		} else {
 			s.events = collapse(s.events)
 		}
 	}
@@ -126,7 +133,7 @@ func (s *Store) persistLocked() {
 		return
 	}
 	if b, err := json.Marshal(s.events); err == nil {
-		_ = os.MkdirAll("/opt/monitoring", 0o755)
+		_ = os.MkdirAll(filepath.Dir(s.path), 0o755)
 		tmp := s.path + ".tmp"
 		if os.WriteFile(tmp, b, 0o644) == nil {
 			_ = os.Rename(tmp, s.path)
@@ -141,20 +148,28 @@ func (s *Store) List(n int) []Event {
 	if n > len(s.events) {
 		n = len(s.events)
 	}
+	if n < 0 {
+		n = 0
+	}
 	out := make([]Event, n)
 	copy(out, s.events[:n])
 	return out
 }
 
-// CountSince counts events of one kind newer than the given unix second.
-// Used for "N reconnects in the last 24 h / 7 d" style figures.
+// CountSince counts occurrences of one kind newer than the given unix
+// second, weighting collapsed repeats by their Count. Used for "N reconnects
+// in the last 24 h / 7 d" style figures.
 func (s *Store) CountSince(kind string, since int64) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
 	for _, ev := range s.events {
 		if ev.Kind == kind && ev.At >= since {
-			n++
+			c := ev.Count
+			if c < 1 {
+				c = 1
+			}
+			n += c
 		}
 	}
 	return n

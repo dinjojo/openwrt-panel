@@ -260,6 +260,24 @@
     .m-sub { font-size: var(--t-xs); color: var(--ink-2); margin-top: 2px; min-height: 1.2em; }
     .m-spark { display: block; width: 100%; height: 26px; margin-top: 4px; overflow: visible; }
     .meter-click { cursor: pointer; }
+    /* Compact trend strip: denser grid, smaller numerals, tighter padding. */
+    .trend-strip { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+    .trend-strip .meter { padding: 7px var(--s3) 6px; }
+    .trend-strip .m-val { font-size: var(--t-base); font-weight: 600; margin-top: 2px; }
+    .trend-strip .m-val .ro-unit { font-size: var(--t-xs); }
+    .trend-strip .m-sub { min-height: 0; line-height: 1.3; }
+    .trend-strip .m-lab { font-size: var(--t-xs); }
+    /* Trends tab: one continuous, dense surface instead of stacked boxes —
+       tight padding, hairline dividers only between sections, small caps
+       section titles. */
+    #tab-trends .sect { --pad: var(--s4); padding: 8px var(--s4) 10px; border-top: 0; border-bottom: 1px solid var(--hair); }
+    #tab-trends .sect:last-child { border-bottom: 0; }
+    #tab-trends .sect-head { margin-bottom: 5px; gap: var(--s2); }
+    #tab-trends .h2 { font-size: var(--t-xs); font-weight: 650; color: var(--ink-2);
+      text-transform: uppercase; letter-spacing: 0.07em; }
+    #tab-trends .h2 .sub { font-size: var(--t-xs); margin-left: var(--s2); }
+    #tab-trends .mt3 { margin-top: var(--s1); }
+    #tab-trends .note { font-size: var(--t-2xs); }
     .meter-click:hover .meter { background: color-mix(in srgb, var(--well) 70%, var(--panel)); }
     .bar { height: 4px; background: var(--hair); border-radius: 2px; overflow: hidden; margin-top: 6px; }
     .bar > i { display: block; height: 100%; background: var(--ink-2); border-radius: 2px; }
@@ -443,6 +461,9 @@
     <button data-tab="overview" role="tab" class="tab-btn">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       <span>Overview</span></button>
+    <button data-tab="trends" role="tab" class="tab-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg>
+      <span>Trends</span></button>
     <button data-tab="diag" role="tab" class="tab-btn">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
       <span>Diagnostics</span></button>
@@ -546,19 +567,6 @@
         <div id="ov-radio-nb" class="hidden mt4"></div>
       </section>
 
-      <!-- Trends: percentiles and reliability over the last day -->
-      <section class="sect" id="ov-trends-sect">
-        <div class="sect-head">
-          <h2 class="h2">Trends <span class="sub" id="ov-trend-sub">last 24 hours</span></h2>
-          <div class="seg" role="group" aria-label="Trends range">
-            <button data-trange="24h" class="trange-btn">24H</button>
-            <button data-trange="7d"  class="trange-btn">7D</button>
-            <button data-trange="30d" class="trange-btn">30D</button>
-          </div>
-        </div>
-        <div id="ov-trend-strip" class="meters"></div>
-      </section>
-
       <div class="sect split">
         <div class="cell">
           <div class="sect-head"><h2 class="h2">Top clients <span class="sub">this billing period</span></h2></div>
@@ -571,16 +579,66 @@
       </div>
     </section>
 
+    <!-- ═══ Tab: Trends ══════════════════════════════════════════════════ -->
+    <section id="tab-trends" role="tabpanel" class="hidden">
+
+      <!-- Window: presets or a custom from/to range -->
+      <section class="sect">
+        <div class="sect-head">
+          <h2 class="h2">Trends <span class="sub" id="tr-window-sub">last 24 hours</span></h2>
+          <div style="display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap">
+            <div class="seg" role="group" aria-label="Trends window">
+              <button data-trange="6h" class="trange-btn">6H</button>
+              <button data-trange="12h" class="trange-btn">12H</button>
+              <button data-trange="24h" class="trange-btn">24H</button>
+              <button data-trange="7d" class="trange-btn">7D</button>
+              <button data-trange="30d" class="trange-btn">30D</button>
+            </div>
+            <input id="tr-from" class="input" style="width:auto;padding:4px 6px;font-size:var(--t-xs)" type="datetime-local" aria-label="From">
+            <span class="xs muted">&rarr;</span>
+            <input id="tr-to" class="input" style="width:auto;padding:4px 6px;font-size:var(--t-xs)" type="datetime-local" aria-label="To">
+            <button id="tr-apply" class="key" style="cursor:pointer">Apply</button>
+            <button id="tr-now" class="key" style="cursor:pointer">Now</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Latency & reliability -->
+      <section class="sect">
+        <div class="sect-head"><h2 class="h2">Latency &amp; reliability <span class="sub">p50 / p95 / p99</span></h2></div>
+        <div id="tr-lat-strip" class="meters trend-strip"></div>
+        <p class="note mt3">Half your pings are faster than p50, only 5% worse than p95. The &ldquo;under load&rdquo; number is the p95 ping during a full-rate download.</p>
+      </section>
+
+      <!-- Shaper & queue -->
+      <section class="sect">
+        <div class="sect-head"><h2 class="h2">Shaper &amp; queue <span class="sub">CAKE utilisation and AQM activity</span></h2></div>
+        <div id="tr-shaper-strip" class="meters trend-strip"></div>
+      </section>
+
+      <!-- Router headroom -->
+      <section class="sect">
+        <div class="sect-head"><h2 class="h2">Router headroom <span class="sub">CPU, temperature, connections</span></h2></div>
+        <div id="tr-head-strip" class="meters trend-strip"></div>
+      </section>
+
+      <!-- Wi-Fi quality -->
+      <section class="sect">
+        <div class="sect-head"><h2 class="h2">Wi-Fi quality <span class="sub">per client, over the window</span></h2></div>
+        <div id="tr-wifi-strip" class="meters trend-strip"></div>
+      </section>
+
+      <!-- Bufferbloat grade history: daily probe results, both directions -->
+      <section class="sect">
+        <div class="sect-head"><h2 class="h2">Bufferbloat grade history <span class="sub">daily probe grades</span></h2></div>
+        <div id="tr-bloat" class="rows"></div>
+      </section>
+    </section>
+
     <!-- ═══ Tab: SQM (live queue stats) ══════════════════════════════════ -->
     <section id="tab-sqm" role="tabpanel">
       <p id="msg" class="empty">Waiting for data…</p>
       <div id="ifaces"></div>
-
-      <!-- Shaper utilisation and AQM activity trends -->
-      <section class="sect" id="sqm-trends-sect">
-        <div class="sect-head"><h2 class="h2">Shaper trends <span class="sub" id="sqm-trend-sub">last 24 hours</span></h2></div>
-        <div id="sqm-trend-strip" class="meters"></div>
-      </section>
     </section>
 
     <!-- ═══ Tab: Clients ════════════════════════════════════════════════ -->
@@ -599,12 +657,6 @@
             <div id="cl-top" class="m-val truncate" style="font-size:var(--t-md);font-family:var(--f-ui);font-weight:600;line-height:1.75">–</div>
             <div id="cl-top-sub" class="m-sub">&nbsp;</div></div>
         </div>
-      </section>
-
-      <!-- Wi-Fi quality trends -->
-      <section class="sect" id="cl-trends-sect">
-        <div class="sect-head"><h2 class="h2">Wi-Fi trends <span class="sub" id="cl-trend-sub">last 24 hours</span></h2></div>
-        <div id="cl-trend-strip" class="rows"></div>
       </section>
 
       <!-- Live per-client tables: Wi-Fi (Orbi mesh) above LAN, one column
@@ -715,36 +767,17 @@
         </div>
       </section>
 
-      <div class="sect split">
-        <div class="cell">
-          <div class="sect-head">
-            <h2 class="h2">Latency quality <span class="sub">p50 / p95 / p99</span></h2>
-            <div class="seg" role="group" aria-label="Latency range">
-              <button data-pctrange="24h" class="pctrange-btn">24H</button>
-              <button data-pctrange="7d"  class="pctrange-btn">7D</button>
-            </div>
+      <section class="sect">
+        <div class="sect-head">
+          <h2 class="h2">Buffering episodes <span class="sub">when and why</span></h2>
+          <div class="seg" role="group" aria-label="Buffering range">
+            <button data-incrange="24h" class="incrange-btn">24H</button>
+            <button data-incrange="7d"  class="incrange-btn">7D</button>
+            <button data-incrange="30d" class="incrange-btn">30D</button>
           </div>
-          <div id="pct-strip" class="meters"></div>
-          <p class="note mt3">Half your pings are faster than p50, only 5% worse than p95. The “under load” number is the p95 ping during a full-rate download.</p>
         </div>
-        <div class="cell">
-          <div class="sect-head">
-            <h2 class="h2">Buffering episodes <span class="sub">when and why</span></h2>
-            <div class="seg" role="group" aria-label="Buffering range">
-              <button data-incrange="24h" class="incrange-btn">24H</button>
-              <button data-incrange="7d"  class="incrange-btn">7D</button>
-              <button data-incrange="30d" class="incrange-btn">30D</button>
-            </div>
-          </div>
-          <div id="inc-summary" class="strong row"></div>
-          <div id="inc-list" class="rows mt3"></div>
-        </div>
-      </div>
-
-      <!-- Bufferbloat grade history: daily probe results, both directions -->
-      <section class="sect" id="bloat-hist-sect">
-        <div class="sect-head"><h2 class="h2">Bufferbloat grade history <span class="sub">daily &middot; last 30 days</span></h2></div>
-        <div id="bloat-history" class="rows"></div>
+        <div id="inc-summary" class="strong row"></div>
+        <div id="inc-list" class="rows mt3"></div>
       </section>
 
       <section class="sect">
@@ -1716,7 +1749,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       delete tabTimers[tab];
     }
 
-    const tabTitles = { overview: 'Overview', diag: 'Diagnostics', sqm: 'SQM', clients: 'Clients', system: 'System' };
+    const tabTitles = { overview: 'Overview', trends: 'Trends', diag: 'Diagnostics', sqm: 'SQM', clients: 'Clients', system: 'System' };
     function setTab(name) {
       activeTab = name;
       try { sessionStorage.setItem('cakestats-tab', name); } catch (_) {}
@@ -1728,7 +1761,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       const pt = document.getElementById('page-title');
       if (pt) pt.textContent = tabTitles[name] || '';
       document.title = 'cake-stats · ' + (tabTitles[name] || '');
-      ['overview', 'sqm', 'clients', 'diag', 'system'].forEach(t => {
+      ['overview', 'trends', 'sqm', 'clients', 'diag', 'system'].forEach(t => {
         document.getElementById('tab-' + t).classList.toggle('hidden', t !== name);
       });
       if (name === 'overview') requestAnimationFrame(() => updateTape(true));
@@ -1737,35 +1770,33 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       if (hb) hb.classList.toggle('hidden', name !== 'overview');
 
       // Always stop the other tabs' timers.
-      ['overview', 'clients', 'diag', 'system'].forEach(t => { if (t !== name) stopTabTimers(t); });
+      ['overview', 'clients', 'diag', 'system', 'trends'].forEach(t => { if (t !== name) stopTabTimers(t); });
 
       if (name === 'overview') {
         pollOverview();
         loadOvIncidents();
         loadRadio();
-        loadTrendsPanels();
         if (!tabTimers.overview) tabTimers.overview = [setInterval(pollOverview, 10000), setInterval(loadOvIncidents, 60000),
-          setInterval(loadRadio, 30000), setInterval(loadTrendsPanels, 300000)];
-      } else if (name === 'sqm') {
+          setInterval(loadRadio, 30000)];
+      } else if (name === 'trends') {
         loadTrendsPanels();
+        if (!tabTimers.trends) tabTimers.trends = [setInterval(loadTrendsPanels, 300000)];
+      } else if (name === 'sqm') {
+        // live queue stats stream in over SSE
       } else if (name === 'clients') {
         pollClients();
         renderClientsTable();
         loadClientHistory();
-        loadTrendsPanels();
         tabTimers.clients = [
           setInterval(pollClients, 5000),
           setInterval(loadClientHistory, 60000),
         ];
       } else if (name === 'diag') {
         loadConnHealth();
-        loadLatencyQuality();
-        loadTrendsPanels();
         loadIncidents();
         loadDiagWanChart();
         tabTimers.diag = [
           setInterval(loadConnHealth, 30000),
-          setInterval(loadLatencyQuality, 300000),
           setInterval(loadIncidents, 60000),
           setInterval(loadDiagWanChart, 60000),
         ];
@@ -1785,8 +1816,9 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
     // no loaders of its own — its data streams in over SSE every few seconds.
     function refreshTab() {
       if (activeTab === 'overview') { pollOverview(); loadOvIncidents(); loadRadio(); }
+      else if (activeTab === 'trends') { loadTrendsPanels(); }
       else if (activeTab === 'clients') { pollClients(); renderClientsTable(); loadClientHistory(); }
-      else if (activeTab === 'diag') { loadConnHealth(); loadIncidents(); loadDiagWanChart(); loadLatencyQuality(); }
+      else if (activeTab === 'diag') { loadConnHealth(); loadIncidents(); loadDiagWanChart(); }
       else if (activeTab === 'system') { loadSystemHistory(); loadReport(); }
       const lu = document.getElementById('last-updated');
       if (lu) { lu.style.color = 'var(--accent)'; setTimeout(() => { lu.style.color = ''; }, 600); }
@@ -2319,10 +2351,23 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       if (clr) { clientsRange = clr.dataset.clrange; _setPillBtns('.clrange-btn', 'clrange', clientsRange); loadClientHistory(); }
       const sr = e.target.closest('.sysrange-btn');
       if (sr) { sysRange = sr.dataset.sysrange; _setPillBtns('.sysrange-btn', 'sysrange', sysRange); loadSystemHistory(); }
-      const pr = e.target.closest('.pctrange-btn');
-      if (pr) { sysPctRange = pr.dataset.pctrange; _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange); loadLatencyQuality(); }
-      const tr = e.target.closest('.trange-btn');
-      if (tr) { trendRange = tr.dataset.trange; _setPillBtns('.trange-btn', 'trange', trendRange); loadTrendsPanels(); }
+      const pr = e.target.closest('.trange-btn');
+      if (pr) {
+        trendRange = pr.dataset.trange;
+        trendCustom = null;
+        document.getElementById('tr-from').value = '';
+        document.getElementById('tr-to').value = '';
+        _setPillBtns('.trange-btn', 'trange', trendRange);
+        loadTrendsPanels();
+      }
+      if (e.target.closest('#tr-apply')) applyTrendCustom();
+      if (e.target.closest('#tr-now')) {
+        trendCustom = null;
+        document.getElementById('tr-from').value = '';
+        document.getElementById('tr-to').value = '';
+        _setPillBtns('.trange-btn', 'trange', trendRange);
+        loadTrendsPanels();
+      }
       const wr = e.target.closest('.wanrange-btn');
       if (wr) { wanRange = wr.dataset.wanrange; _setPillBtns('.wanrange-btn', 'wanrange', wanRange); loadDiagWanChart(); }
       const ir = e.target.closest('.incrange-btn');
@@ -2707,12 +2752,16 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
 
     // ── System tab: tunnel, connection table, latency quality, incidents ──
 
-    let sysPctRange = '24h';
-    let trendRange = '24h';   // shared by the Overview / SQM / Clients trend strips
+    let trendRange = '24h';   // window for the Trends tab: preset key…
+    let trendCustom = null;   // …or {start,end} unix seconds from the custom picker
     let sysIncRange = '24h';
     let ovInc = null;   // last /api/incidents?range=24h (Overview footer)
 
-    function rangeWord(r) { return r === '24h' ? '24 hours' : r === '7d' ? '7 days' : '30 days'; }
+    function rangeWord(r) {
+      const n = parseInt(r, 10);
+      if (isNaN(n)) return r;
+      return n + (r.endsWith('h') ? ' hours' : ' days');
+    }
 
     async function loadOvIncidents() {
       try {
@@ -2812,40 +2861,14 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       } catch (_) {}
     }
 
-    async function loadLatencyQuality() {
-      try {
-        const d = await fetch(appURL('/api/percentiles?range=' + sysPctRange)).then(r => r.json());
-        const el = document.getElementById('pct-strip');
-        const card = (label, big, sub, color) =>
-          '<div class="meter">' +
-          '<div class="m-lab">' + label + '</div>' +
-          '<div class="m-val" style="color:' + color + '">' + big + '</div>' +
-          '<div class="m-sub">' + sub + '</div></div>';
-        let html = '';
-        (d.targets || []).forEach(tg => {
-          html += card('Line latency &middot; ' + h(tg.name),
-            tg.p50.toFixed(1) + ' / ' + tg.p95.toFixed(1) + ' / ' + (tg.p99 || 0).toFixed(1) + ' ms',
-            'p50 / p95 / p99 &middot; ' + tg.samples + ' samples', 'var(--text)');
-        });
-        if (d.loaded) html += card('Under load &middot; probe',
-          d.loaded.p95.toFixed(1) + ' ms',
-          'p95 ping while downloading' + (d.idle ? ' (idle ' + d.idle.p50.toFixed(1) + ' ms)' : ''), 'var(--text)');
-        if (d.loss) html += card('Packet loss',
-          (d.loss.p95 * 100).toFixed(2) + ' %',
-          'p95 loss rate &middot; ' + d.loss.samples + ' checks', 'var(--text)');
-        el.innerHTML = html || '<p class="meter sm muted">No latency history yet — numbers appear as data collects.</p>';
-      } catch (_) {}
-    }
-
-    // ── Cross-panel trend strips ────────────────────────────────────────
-    // One fetch of /api/percentiles?range=24h feeds the Overview, SQM and
-    // Clients trend strips plus the Diagnostics grade history. Every strip
+    // ── Trends tab ──────────────────────────────────────────────────────
+    // One fetch of /api/percentiles feeds the whole tab. Every strip
     // degrades to an honest "no data" note when a series is missing.
 
     function trendCard(label, big, sub) {
       return '<div class="meter">' +
         '<div class="m-lab">' + label + '</div>' +
-        '<div class="m-val" style="font-size:var(--t-lg)">' + big + '</div>' +
+        '<div class="m-val">' + big + '</div>' +
         '<div class="m-sub">' + sub + '</div></div>';
     }
 
@@ -2860,66 +2883,84 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
     async function loadTrendsPanels() {
       let d;
       try {
-        d = await fetch(appURL('/api/percentiles?range=' + trendRange)).then(r => r.json());
+        let q = 'range=' + trendRange;
+        if (trendCustom) q = 'start=' + trendCustom.start + '&end=' + trendCustom.end;
+        d = await fetch(appURL('/api/percentiles?' + q)).then(r => r.json());
       } catch (_) { return; }
       const t = d && d.trends;
       if (!t) return;
-      const rw = 'last ' + rangeWord(trendRange);
-      ['ov-trend-sub', 'sqm-trend-sub', 'cl-trend-sub'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = rw;
-      });
 
-      // ── Overview: latency, loss, reliability, headroom ──────────────
-      const ov = document.getElementById('ov-trend-strip');
-      if (ov) {
+      // Window caption: custom from/to range or the preset's word.
+      const sub = document.getElementById('tr-window-sub');
+      if (sub) {
+        if (trendCustom) {
+          const f = ts => { const dt = new Date(ts * 1000); return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + dt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); };
+          sub.textContent = f(trendCustom.start) + ' → ' + f(trendCustom.end);
+        } else {
+          sub.textContent = 'last ' + rangeWord(trendRange);
+        }
+      }
+      const winLabel = trendCustom ? 'custom window' : trendRange;
+
+      // ── Latency & reliability ────────────────────────────────────────
+      const lat = document.getElementById('tr-lat-strip');
+      if (lat) {
         let html = '';
-        const lat = (t.latency || [])[0];
-        if (lat) html += trendCard('Line latency', lat.p50.toFixed(1) + ' / ' + lat.p95.toFixed(1) + ' / ' + lat.p99.toFixed(1) + ' ms',
-          'p50 / p95 / p99' + (t.stddev ? ' &middot; jitter ±' + t.stddev.toFixed(1) + ' ms' : ''));
+        (t.latency || []).forEach(tg => {
+          const nm = tg.name || 'wan';
+          html += trendCard('Line latency &middot; ' + h(nm),
+            tg.p50.toFixed(1) + ' / ' + tg.p95.toFixed(1) + ' / ' + tg.p99.toFixed(1) + ' ms',
+            'p50 / p95 / p99 &middot; ' + tg.samples + ' samples');
+        });
+        if (t.stddev) html += trendCard('Jitter', '±' + t.stddev.toFixed(1) + ' ms', 'ping stddev');
+        if (d.loaded) html += trendCard('Under load &middot; probe',
+          d.loaded.p95.toFixed(1) + ' ms',
+          'p95 ping while downloading' + (d.idle ? ' (idle ' + d.idle.p50.toFixed(1) + ' ms)' : ''));
         if (d.loss) html += trendCard('Packet loss', (d.loss.p95 * 100).toFixed(2) + ' %',
           'p95 rate' + (t.wan_p99_loss ? ' &middot; p99 ' + (t.wan_p99_loss * 100).toFixed(2) + ' %' : ''));
-        if (t.shaper && t.shaper.down && t.shaper.down.ceiling_mbps > 0) {
-          html += trendCard('Download shaper', t.shaper.down.p95_mbps.toFixed(0) + ' <span class="ro-unit">/ ' + t.shaper.down.ceiling_mbps.toFixed(0) + ' Mbit/s</span>',
-            'p95 vs ceiling' + (t.shaper.down.pinned_pct >= 0.1 ? ' &middot; pinned ' + t.shaper.down.pinned_pct.toFixed(1) + '% of the time' : ''));
-        }
-        if (t.shaper && t.shaper.up && t.shaper.up.ceiling_mbps > 0) {
-          html += trendCard('Upload shaper', t.shaper.up.p95_mbps.toFixed(0) + ' <span class="ro-unit">/ ' + t.shaper.up.ceiling_mbps.toFixed(0) + ' Mbit/s</span>',
-            'p95 vs ceiling' + (t.shaper.up.pinned_pct >= 0.1 ? ' &middot; pinned ' + t.shaper.up.pinned_pct.toFixed(1) + '% of the time' : ''));
-        }
-        if (t.headroom) html += trendCard('Router headroom', t.headroom.cpu_p95.toFixed(0) + ' %',
-          'CPU p95' + (t.headroom.temp_max ? ' &middot; peak ' + t.headroom.temp_max.toFixed(0) + '°C' : ''));
-        if (t.wifi_clients) html += trendCard('Wi-Fi busy', t.wifi_clients.p95.toFixed(0) + ' clients', 'p95 concurrent');
         html += trendCard('Line stability', t.wan_changes === 0 ? 'no drops' : t.wan_changes + ' change' + (t.wan_changes === 1 ? '' : 's'),
-          'PPPoE session transitions · ' + trendRange);
-        ov.innerHTML = html || '<p class="note">No trend history yet — numbers appear as VictoriaMetrics collects.</p>';
+          'PPPoE session transitions &middot; ' + winLabel);
+        lat.innerHTML = html || '<p class="note">No latency history yet — numbers appear as VictoriaMetrics collects.</p>';
       }
 
-      // ── SQM: shaper utilisation + AQM activity ──────────────────────
-      const sqm = document.getElementById('sqm-trend-strip');
-      if (sqm) {
+      // ── Shaper & queue ───────────────────────────────────────────────
+      const sh = document.getElementById('tr-shaper-strip');
+      if (sh) {
         let html = '';
         [['down', 'Download'], ['up', 'Upload']].forEach(([k, label]) => {
-          const sh = t.shaper && t.shaper[k];
-          if (sh && sh.ceiling_mbps > 0) {
-            html += trendCard(label + ' utilisation', sh.p95_mbps.toFixed(0) + ' <span class="ro-unit">/ ' + sh.ceiling_mbps.toFixed(0) + ' Mbit/s</span>',
-              'p95 vs ceiling' + (sh.pinned_pct >= 0.1 ? ' — pinned above 90% for ' + sh.pinned_pct.toFixed(1) + '% of the period' : ' — ceiling holds comfortably'));
+          const s = t.shaper && t.shaper[k];
+          if (s && s.ceiling_mbps > 0) {
+            html += trendCard(label + ' utilisation', s.p95_mbps.toFixed(0) + ' <span class="ro-unit">/ ' + s.ceiling_mbps.toFixed(0) + ' Mbit/s</span>',
+              'p95 vs ceiling' + (s.pinned_pct >= 0.1 ? ' — pinned above 90% for ' + s.pinned_pct.toFixed(1) + '% of the window' : ' — ceiling holds comfortably'));
           }
           const a = t.aqm && t.aqm[k];
           if (a) {
             html += trendCard(label + ' AQM', a.marks.toFixed(0) + ' <span class="ro-unit">marks</span> · ' + a.drops.toFixed(0) + ' <span class="ro-unit">drops</span>',
-              'in ' + trendRange + ' &middot; queue p95 ' + a.peak_delay_p95.toFixed(2) + ' ms of the ' + a.target_ms.toFixed(1) + ' ms target');
+              'in ' + winLabel + ' &middot; queue p95 ' + a.peak_delay_p95.toFixed(2) + ' ms of the ' + a.target_ms.toFixed(1) + ' ms target');
           }
         });
-        sqm.innerHTML = html || '<p class="note">No SQM history yet — the shaper trends appear as collectd accumulates a day of data.</p>';
+        sh.innerHTML = html || '<p class="note">No SQM history yet — the shaper trends appear as collectd accumulates data.</p>';
       }
 
-      // ── Clients: Wi-Fi quality per device ───────────────────────────
-      const cl = document.getElementById('cl-trend-strip');
-      if (cl) {
+      // ── Router headroom ──────────────────────────────────────────────
+      const hd = document.getElementById('tr-head-strip');
+      if (hd) {
+        let html = '';
+        if (t.headroom) {
+          html += trendCard('CPU p95', t.headroom.cpu_p95.toFixed(0) + ' %',
+            'busy % across cores' + (t.headroom.load_p95 ? ' &middot; load p95 ' + t.headroom.load_p95.toFixed(2) : ''));
+          if (t.headroom.temp_max) html += trendCard('Temperature peak', t.headroom.temp_max.toFixed(0) + ' °C', 'SoC max over the window');
+          if (t.headroom.conntrack_p95) html += trendCard('Conntrack p95', t.headroom.conntrack_p95.toFixed(0), 'tracked connections, 95th pct');
+        }
+        hd.innerHTML = html || '<p class="note">No headroom history yet — collectd has to run for a while first.</p>';
+      }
+
+      // ── Wi-Fi quality ────────────────────────────────────────────────
+      const wf = document.getElementById('tr-wifi-strip');
+      if (wf) {
         let html = '';
         if (t.wifi_clients) {
-          html += trendCard('Concurrent Wi-Fi clients', t.wifi_clients.p95.toFixed(0), 'p95 · last ' + rangeWord(trendRange));
+          html += trendCard('Concurrent clients', t.wifi_clients.p95.toFixed(0), 'p95 over the window');
         }
         (t.wifi_devices || []).forEach(w => {
           const nm = (w.name && w.name !== 'unknown') ? w.name : w.mac.slice(0, 8);
@@ -2928,11 +2969,11 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
             'worst 5%' + (w.link_p95 ? ' &middot; link p95 ' + w.link_p95.toFixed(0) + ' Mbit/s' : '') +
             ' &middot; seen ' + w.present_pct.toFixed(0) + '%');
         });
-        cl.innerHTML = html || '<p class="note">No Wi-Fi history yet — trends appear after the Orbi poller has run for a while.</p>';
+        wf.innerHTML = html || '<p class="note">No Wi-Fi history yet — trends appear once the Orbi poller has run for a while.</p>';
       }
 
-      // ── Diagnostics: daily grade history ────────────────────────────
-      const bh = document.getElementById('bloat-history');
+      // ── Bufferbloat grade history ────────────────────────────────────
+      const bh = document.getElementById('tr-bloat');
       if (bh) {
         let html = '';
         [['down', 'Download'], ['up', 'Upload']].forEach(([k, label]) => {
@@ -2949,6 +2990,20 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
         });
         bh.innerHTML = html || '<p class="note">No probe history yet — grades appear after the hourly probe has run (11:00–20:00).</p>';
       }
+    }
+
+    // Custom from/to window: read the datetime-local inputs and re-query.
+    function applyTrendCustom() {
+      const f = document.getElementById('tr-from').value;
+      const to = document.getElementById('tr-to').value;
+      if (!f || !to) return;
+      const start = Math.floor(new Date(f).getTime() / 1000);
+      let end = Math.floor(new Date(to).getTime() / 1000);
+      if (!start || !end || end - start < 3600) return;
+      if (end > Date.now() / 1000) end = Math.floor(Date.now() / 1000);
+      trendCustom = { start: start, end: end };
+      document.querySelectorAll('.trange-btn').forEach(b => { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); });
+      loadTrendsPanels();
     }
 
     async function loadIncidents() {
@@ -3567,7 +3622,6 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
 
     // ── Boot ──────────────────────────────────────────────────────────────
     seedHistory(); // seed sparklines and the tape from the server ring buffer before first SSE
-    _setPillBtns('.pctrange-btn', 'pctrange', sysPctRange);
     _setPillBtns('.trange-btn', 'trange', trendRange);
     _setPillBtns('.clrange-btn', 'clrange', clientsRange);
     _setPillBtns('.sysrange-btn', 'sysrange', sysRange);
