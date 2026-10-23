@@ -1,0 +1,2 @@
+Barlow is Copyright 2019 The Barlow Project Authors (https://github.com/jpt/barlow), licensed under the SIL Open Font License 1.1.
+Chivo Mono is Copyright 2021 The Chivo Project Authors (https://github.com/omnibus-type/chivo), licensed under the SIL Open Font License 1.1.
