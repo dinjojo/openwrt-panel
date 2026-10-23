@@ -1,0 +1,279 @@
+# cake-stats
+
+Real-time web UI for monitoring [CAKE SQM](https://www.bufferbloat.net/projects/codel/wiki/Cake/) statistics on Linux and OpenWrt routers — extended into a full-network monitoring panel that describes the live state of an OpenWrt gateway: health verdicts, exit paths (WARP tunnel vs direct line), latency quality, buffering episodes, per-client drill-down and hardware health.
+
+Built for **embedded hardware** where every allocation matters: Fiber v3 keeps HTTP overhead minimal, zerolog emits structured logs with near-zero allocations, and a dedicated `pkg/util` package centralises all allocation-heavy string operations so they can be audited and swapped in one place. The result is a single static binary that streams live per-tier CAKE stats to any browser with negligible CPU and memory cost.
+
+---
+
+<a name="table-of-contents"></a>
+## Table of Contents
+- [How it looks like](#how-it-looks-like)
+  - [Desktop](#desktop)
+  - [Mobile](#mobile)
+- [Status](#status)
+- [Features](#features)
+- [Requirements](#requirements)
+- [Design Notes](#design-notes)
+- [Build](#build)
+- [Usage](#usage)
+  - [Quick start](#quick-start)
+  - [Install on OpenWrt](#install-on-openwrt)
+  - [Install on systemd Linux](#install-on-systemd-linux)
+  - [Uninstall](#uninstall)
+  - [API](#api)
+- [Limitations & Next Steps](#limitations--next-steps)
+- [Contributing](#contributing)
+- [License](#license)
+
+## How it looks like
+
+### Desktop
+
+<p align="center">
+	<img src="img/overview-dark.png" alt="Overview tab — health verdicts, live throughput, top clients" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Overview — one-glance health verdicts, live throughput, top clients, event feed</em>
+</p>
+
+<p align="center">
+	<img src="img/diag-dark.png" alt="Diagnostics tab — exit paths, latency quality, buffering episodes, WAN history" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Diagnostics — exit paths (WARP tunnel vs direct line), latency quality, buffering episodes, 24h WAN history</em>
+</p>
+
+<p align="center">
+	<img src="img/sqm-dark.png" alt="SQM tab — live CAKE queue statistics" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>SQM — live per-qdisc CAKE statistics with sparklines and full-history drill-down</em>
+</p>
+
+<p align="center">
+	<img src="img/clients-dark.png" alt="Clients tab — per-device live rates and history" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Clients — per-device live rates, connection counts and history drill-down</em>
+</p>
+
+<p align="center">
+	<img src="img/system-dark.png" alt="System tab — router hardware history" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>System — CPU, load, memory, temperature and connection-table history</em>
+</p>
+
+### Light theme
+
+<p align="center">
+	<img src="img/diagnostics-light.png" alt="Diagnostics tab in light theme" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Light "porcelain" theme — greyed surfaces, dark ink foreground; toggle in the header</em>
+</p>
+
+### Mobile
+
+<p align="center">
+	<img src="img/how-it-looks-like-mobile-001.png" alt="Web UI preview" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>UI for mobile screens</em>
+</p>
+
+<p align="center">
+	<img src="img/how-it-looks-like-mobile-002.png" alt="Graphs on mobile screens" style="max-width:100%;height:auto;" />
+	<br/>
+	<em>Graphs for mobile screens</em>
+</p>
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Status
+
+- Stable — all parser unit tests passing, binary builds clean for 14 target platforms. See [Releases](https://github.com/galpt/cake-stats/releases) for the current version.
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Features
+
+- Automatically discovers all CAKE qdiscs via `tc -s qdisc`, including `cake_mq` (multi-queue CAKE introduced in Linux 7.0 and backported to OpenWrt): sub-queue statistics are aggregated into a single logical interface entry so TX throughput, latency and drop graphs work correctly on multi-queue NICs
+- Parses every CAKE field: `thresh`, `target`, `interval`, `pk_delay`, `av_delay`, `sp_delay`, `backlog`, `pkts`, `bytes`, `way_inds`, `way_miss`, `way_cols`, `drops`, `marks`, `ack_drop`, `sp_flows`, `bk_flows`, `un_flows`, `max_len`, `quantum`
+- Correctly handles diffserv modes: `diffserv3`, `diffserv4`, `diffserv8`, `besteffort`, `precedence`; also parses the separate `fwmark MASK` tin-override parameter
+- Two-word tier names are joined correctly (e.g. `"Best Effort"`)
+- Real-time push via **Server-Sent Events** — no WebSocket, no polling jitter
+- Built on Fiber v3 with zerolog for structured logs
+- Default poll interval 100ms for near-instant UI updates (adjustable via `-interval`)
+- Single static binary — no runtime dependencies
+- Web UI: dark ops-console theme and a greyed light "porcelain" theme (toggle in the header), Inter + JetBrains Mono, values in neutral colour with status carried by dots and alerts — designed for spotting problems, not decorating panels
+- Responsive for desktop and mobile (sticky first column, horizontal scroll on small screens)
+- Per-interface **live sparklines** (TX throughput, avg latency, drops/s) with current-value labels
+- Tap/click any sparkline bar to open a **full-screen history modal** with three uPlot time-series charts
+- Server-side ring buffer retains history across page reloads (configurable via `-history` flag)
+
+### Health monitoring &amp; verdicts (beyond CAKE stats)
+
+- **Plain-language health checks** — Internet, gateway, DNS, SQM qdiscs, connection table, clock, WARP tunnel — each returns an ok/warn/crit verdict with a plain-English explanation ("what this means"), surfaced as one health bar on the Overview tab
+- **Exit-path visibility** — live WARP tunnel state (handshake age, reconnect counts, 10-second traffic rates) next to the native/direct line traffic, so you can see both ways out and which one is carrying what
+- **Bufferbloat probe** — optional `scripts/bufferbloat_probe.sh` (cron, e.g. hourly) saturates the line with multiple parallel flows and pushes latency-under-load, burst speed and idle RTT metrics to VictoriaMetrics over `/api/v1/import/prometheus`
+- **Latency quality analytics** — p50/p95 latency, loaded-vs-idle comparison and automatic **buffering episode detection** (queue-latency spikes while the line is busy) over 24h/7d/30d ranges
+- **Client drill-down** — per-device live rates, connection counts and clickable history with named devices; top talkers first
+- **Event feed** — persistent events (WAN down/up, PPPoE reconnects, tunnel down/up, probe results, config changes) with counts over 24h/7d
+- **Firewall &amp; conntrack** — aggregate WAN reject counters with baseline-aware alerting (sudden flood detection), connection-table utilisation, and hardware health (NVMe via `nvme`, temperature, load)
+- **VictoriaMetrics integration** — long-term history is queried from a local VM instance when configured; the dashboard falls back to in-process history otherwise
+- **Optional clock-drift check** — SNTP with an HTTP `Date` fallback for ISPs that block UDP/123
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Requirements
+
+- Linux kernel with `tc` + `sch_cake` module loaded, **or** OpenWrt with `kmod-sched-cake`
+- Go 1.26+ (build only; not needed at runtime)
+- Third-party libraries used during build/services:
+  - [Fiber v3](https://gofiber.io/) – HTTP framework
+  - [zerolog](https://github.com/rs/zerolog) – structured logging
+  - [easyjson](https://github.com/mailru/easyjson) – JSON code generation; `pkg/types/types_easyjson.go` is checked in and generated via `//go:generate easyjson -all` in `pkg/types/types.go`.  CI installs the `easyjson` binary and re-runs `go generate ./...` on every build to keep the generated file in sync.
+
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Design Notes
+
+- **Modular architecture**: code is split into `pkg/parser`, `pkg/history`, `pkg/server`, `pkg/log`, `pkg/types`, and `pkg/util`, with the CLI entrypoint under `cmd/cake-stats`.  `pkg/util` provides zero-allocation string/byte helpers — `FieldTokenizer` (reusable tokeniser with a `[64]string` buffer), `LineScanner` (line iterator over `[]byte` with no per-line allocation), `BytesToString` (zero-copy unsafe conversion), and numeric parsers (`ParseUint64` at 0 B/op, `ParseBytesStr`, `ParseDelayMs`).
+- **Zero-allocation philosophy**: the parser uses `LineScanner` and `FieldTokenizer` to iterate and tokenise tc output without allocating `[]string` per line.  Tier-table storage uses fixed-size arrays instead of maps.  All `strings.Trim*` calls return sub-strings (no copy).  `ParseUint64` is hand-rolled to avoid `strconv` escape.  The result: the 100 ms poll loop for a 2-interface setup allocates only **3 objects** (down from 124 before the refactor).  The poll is designed to run with negligible GC pressure.
+- **Ring buffer history**: a thread-safe circular buffer stores past snapshots; clients receive both current data and historical samples after reconnects or page loads.
+- **Polling strategy**: defaults to 100 ms for near-instant updates; interval is command-line configurable.
+- **Server-Sent Events**: statistics are broadcast over SSE.  A pool of reusable message buffers reduces allocations when many clients connect.
+- **Fiber & zerolog**: Fiber v3 provides a lightweight HTTP server with built‑in recovery middleware; zerolog supplies compact, structured log output.
+- **Single static binary**: the project builds to one statically-linked executable, suitable for OpenWrt.
+- **Testing and documentation**: `pkg/parser`, `pkg/history`, and `pkg/util` include unit tests; `pkg/history` also includes a benchmark (`BenchmarkHistoryRecord`).  Dependencies are kept to a minimum to ease audits.
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Build
+
+```bash
+git clone https://github.com/galpt/cake-stats
+cd cake-stats
+go test ./...          # unit tests
+go test -bench=. -benchmem ./pkg/parser ./pkg/history ./pkg/util  # verify allocation counts
+go build -ldflags "-s -w -X main.Version=1.0.0" -o cake-stats ./cmd/cake-stats
+```
+
+> [!NOTE]
+> `pkg/types/types_easyjson.go` is checked in, so a normal `go build` works without extra tools. To regenerate it after editing `pkg/types/types.go`, install `easyjson` and re-run codegen:
+> ```bash
+> go install github.com/mailru/easyjson/easyjson@latest
+> go generate ./...
+> ```
+> CI does this automatically on every run.
+
+Cross-compile for a MIPS OpenWrt router:
+```bash
+CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat \
+  go build -ldflags "-s -w -X main.Version=1.0.0" -o cake-stats-linux-mips ./cmd/cake-stats
+```
+
+Pre-built binaries for all common platforms are attached to every [GitHub Release](https://github.com/galpt/cake-stats/releases).
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Usage
+
+### Quick start
+```bash
+./cake-stats                 # serves on http://0.0.0.0:11112
+./cake-stats -port 8080      # custom port
+./cake-stats -interval 2s    # poll tc every 2 seconds (default 100ms)
+./cake-stats -history 3600   # retain 1 hour of history (default 300 = 5 min)
+./cake-stats -host 127.0.0.1 # listen only on loopback
+./cake-stats -version        # print version and exit
+```
+
+Open `http://<router-ip>:11112` in a browser.
+
+### Install on OpenWrt
+```bash
+sh install.sh                # auto-detects arch, downloads latest binary
+sh install.sh --port 11112 --interval 1s
+```
+
+> [!TIP]
+> **The installer automatically enables and starts the init.d service.**
+>
+> The OpenWrt init script is installed with `START=99` so it comes up late in boot, registers with procd immediately, and waits through a brief overlay-mount race before `exec`-ing `/usr/bin/cake-stats`. A matching `iface` hotplug fallback also starts it later if netifd finishes after the rc.d boot window. The installer fails immediately if `enable` or `start` does not succeed. If you install by hand make sure to run:
+> ```sh
+> /etc/init.d/cake-stats enable   # create the rc.d symlink
+> /etc/init.d/cake-stats start    # verify it launches immediately
+> ```
+> To verify the router-side install after a reboot, copy `verify-openwrt-install.sh` to the router and run:
+> ```sh
+> sh verify-openwrt-install.sh
+> ```
+> Services that are not enabled will not start after a reboot.
+
+> [!NOTE]
+> **OpenWrt notes from community feedback:**
+>
+> - If you plan to install on-router using `git clone`, many OpenWrt builds ship a minimal `git` without HTTPS support. Replace it with `git-http` and install the CA bundle to enable HTTPS access to GitHub:
+>
+> ```sh
+> opkg update
+> opkg remove git
+> opkg install git-http ca-bundle
+> ```
+>
+> `git-http` provides HTTPS-capable `git` and `ca-bundle` supplies root certificates required to verify GitHub (or other HTTPS) hosts.
+>
+> - Some OpenWrt images include a trimmed `wget` that does not support the `--show-progress` option. If `sh install.sh` fails with `wget: unrecognized option: show-progress`, either edit `install.sh` to remove the `--show-progress` flag, or install a full `wget`/`curl` package on the router before running the installer:
+>
+> ```sh
+> opkg install wget curl
+> # or edit install.sh and remove the --show-progress argument
+> ```
+>
+> Alternatively, download a prebuilt binary from the Releases page and copy it to `/usr/bin` on the router.
+
+### Install on systemd Linux
+```bash
+sudo sh install.sh
+```
+
+### Uninstall
+```bash
+sh uninstall.sh              # prompts for confirmation
+sh uninstall.sh --force      # no prompts
+```
+
+### API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Web UI (HTML) |
+| `GET /api/stats` | Current stats snapshot (JSON) |
+| `GET /api/history` | Full ring-buffer history per interface (JSON), used to seed sparklines on page load |
+| `GET /events` | SSE stream — emits updated JSON on every poll interval |
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Limitations & Next Steps
+
+- Polling‑based; future work may switch to kernel‑level event notification.
+- No built‑in authentication or HTTPS; expose only on trusted networks or pair with a reverse proxy.
+- UI is intentionally minimal.
+- RAM footprint may vary. Depending on kernel malloc behaviour, architecture and how many clients are connected the value can be anywhere from about 4 MB up to a dozen megabytes.
+- Cross‑platform builds are produced, but CAKE itself is Linux‑only; Windows/FreeBSD binaries do not collect real data.
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## Contributing
+
+```bash
+go test ./...    # run unit tests
+go vet ./...     # static analysis
+```
+
+PRs welcome. Please keep external dependencies at zero.
+
+[&#8593; Back to Table of Contents](#table-of-contents)
+
+## License
+
+[MIT](LICENSE)
+
+[&#8593; Back to Table of Contents](#table-of-contents)
