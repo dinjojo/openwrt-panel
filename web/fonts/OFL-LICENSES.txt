@@ -1,2 +1,2 @@
-Barlow is Copyright 2019 The Barlow Project Authors (https://github.com/jpt/barlow), licensed under the SIL Open Font License 1.1.
-Chivo Mono is Copyright 2021 The Chivo Project Authors (https://github.com/omnibus-type/chivo), licensed under the SIL Open Font License 1.1.
+Bitter is Copyright 2017 The Bitter Project Authors (https://github.com/solmatas/BitterPro), licensed under the SIL Open Font License 1.1.
+Azeret Mono is Copyright 2021 The Azeret Mono Project Authors (https://github.com/displaay/azeret), licensed under the SIL Open Font License 1.1.

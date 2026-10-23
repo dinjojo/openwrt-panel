@@ -62,11 +62,11 @@ The two families ship as OFL woff2 files in `web/fonts/`. They are embedded as
 `data:` URIs in `@font-face`, because the binary serves only this HTML file.
 No font host is contacted at runtime.
 
-- **Barlow** (400/500/600/700; industrial grotesque drawn from public-signage
-  lettering) sets all UI text. Headings use weight 600 with tracking of
-  -0.01em; Barlow's upright, engineered forms keep the machined-instrument
-  voice without leaning on the era's default sans faces.
-- **Chivo Mono** (variable, 300–700) sets measurements, tables of
+- **Bitter** (variable, 100–900; contemporary slab serif drawn for screens)
+  sets all UI text. Its slab serifs give the panel an engraved-equipment-label
+  voice that grotesque dashboards don't have. Headings use weight 600 with
+  tracking of -0.01em; body stays at 400.
+- **Azeret Mono** (variable, 100–900) sets measurements, tables of
   numbers, chart axes and range controls. It is always tabular (`.num`, or
   `--f-num` set directly). Mono is used only for data, never as decoration.
 
@@ -180,7 +180,7 @@ its own weight, and a quieter qualifier can follow it inline
 
 The icons are authored inline SVG, 24px viewBox, 2px stroke with round caps
 and joins, in `currentColor`. Direction in text uses the ↓ and ↑ arrows, which
-are in the Barlow latin subset. No emoji, and no Unicode glyphs as icons.
+are in the Bitter latin subset. No emoji, and no Unicode glyphs as icons.
 
 ## Offline
 
