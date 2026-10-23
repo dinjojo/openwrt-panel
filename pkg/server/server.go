@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,12 +180,30 @@ func (s *Server) forcePoll() {
 func (s *Server) runPoller(ctx context.Context) {
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
+	ticks := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			s.forcePoll()
+			// Persist the WAN session state to VictoriaMetrics once a minute
+			// so reliability trends can count PPPoE transitions over weeks.
+			ticks++
+			if s.vmc != nil && s.wan != nil && ticks%60 == 0 {
+				up := 0.0
+				if snap := s.wan.Snapshot(); snap.Up {
+					up = 1.0
+				}
+				line := "wan_session_up{instance=\"nanopi-r6c\"} " +
+					strconv.FormatFloat(up, 'f', -1, 64) + " " +
+					strconv.FormatInt(time.Now().UnixMilli(), 10) + "\n"
+				go func(body string) {
+					importCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = s.vmc.Import(importCtx, body)
+				}(line)
+			}
 		}
 	}
 }

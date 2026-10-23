@@ -41,18 +41,22 @@ type PercentileReport struct {
 	Loaded  *PercentilePair    `json:"loaded,omitempty"` // probe RTT under load
 	Idle    *PercentilePair    `json:"idle,omitempty"`   // probe idle RTT
 	Loss    *PercentilePair    `json:"loss,omitempty"`   // ping droprate
+	Trends  *TrendReport       `json:"trends,omitempty"` // cross-panel trend aggregates
 }
 
 type PercentileTarget struct {
 	Name    string  `json:"name"`
 	P50     float64 `json:"p50"`
 	P95     float64 `json:"p95"`
+	P99     float64 `json:"p99,omitempty"`
 	Samples int     `json:"samples"`
 }
 
 type PercentilePair struct {
 	P50     float64 `json:"p50"`
 	P95     float64 `json:"p95"`
+	P99     float64 `json:"p99,omitempty"`
+	Max     float64 `json:"max,omitempty"`
 	Samples int     `json:"samples"`
 }
 
@@ -86,7 +90,7 @@ func (s *Server) handleAPIPercentiles(c fiber.Ctx) error {
 				name = "wan"
 			}
 			out.Targets = append(out.Targets, PercentileTarget{
-				Name: name, P50: percentile(se.Val, 50), P95: percentile(se.Val, 95), Samples: len(se.Val),
+				Name: name, P50: percentile(se.Val, 50), P95: percentile(se.Val, 95), P99: percentile(se.Val, 99), Samples: len(se.Val),
 			})
 		}
 		sort.Slice(out.Targets, func(i, j int) bool { return out.Targets[i].Name < out.Targets[j].Name })
@@ -103,8 +107,13 @@ func (s *Server) handleAPIPercentiles(c fiber.Ctx) error {
 	// Packet loss (ping droprate, 0..1).
 	if se, err := s.vmc.QueryRange(ctx, `avg(collectd_ping_ping_droprate)`, start, end, step); err == nil && len(se) > 0 {
 		loss := &PercentilePair{P50: percentile(se[0].Val, 50), P95: percentile(se[0].Val, 95), Samples: len(se[0].Val)}
+		loss.P99 = percentile(se[0].Val, 99)
 		out.Loss = loss
 	}
+
+	// Cross-panel trend aggregates (shaper, AQM, headroom, Wi-Fi, grades,
+	// reliability) — all reads over series that already exist in VM.
+	s.addTrends(ctx, &out, rng, start, end)
 
 	c.Set("Content-Type", "application/json; charset=utf-8")
 	b, _ := json.Marshal(out)
