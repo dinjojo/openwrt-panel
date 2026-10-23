@@ -540,6 +540,262 @@ func TestRunPushesCountersToVictoriaMetrics(t *testing.T) {
 	if n := strings.Count(strings.TrimSpace(body), "\n") + 1; n != 3 {
 		t.Errorf("import body has %d lines, want 3", n)
 	}
+
+	// Run has returned, so poll() can be driven directly; s.vmc stays set
+	// and each successful poll pushes once. A vanished device keeps being
+	// exported (frozen totals, zero conns) until it is evicted after 24h.
+	const phone, nas = "aa:bb:cc:00:00:01", "00:11:22:33:44:55"
+	push := func(step string) string {
+		t.Helper()
+		if err := s.poll(); err != nil {
+			t.Fatalf("%s: poll: %v", step, err)
+		}
+		select {
+		case b := <-bodies:
+			return b
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: no VictoriaMetrics import within 5s", step)
+			return ""
+		}
+	}
+	env.set("nlbw", phone+" 7 1000 1 500 1\n"+nas+" 2 300 1 200 1\n", 0)
+	push("both present")
+	env.set("nlbw", nas+" 2 300 1 200 1\n", 0)
+	for _, st := range []struct {
+		name      string
+		absent    time.Duration
+		wantLines int
+		wantPhone bool
+	}{
+		{"phone absent 23h is still exported", 23 * time.Hour, 6, true},
+		{"phone absent over 24h is evicted", 24*time.Hour + time.Minute, 3, false},
+		{"evicted phone stays gone", 0, 3, false},
+	} {
+		if st.absent > 0 {
+			s.mu.Lock()
+			s.seen[phone] = time.Now().Add(-st.absent)
+			s.mu.Unlock()
+		}
+		body := push(st.name)
+		if n := strings.Count(strings.TrimSpace(body), "\n") + 1; n != st.wantLines {
+			t.Errorf("%s: import body has %d lines, want %d\n%s", st.name, n, st.wantLines, body)
+		}
+		if got := strings.Contains(body, `mac="`+phone+`"`); got != st.wantPhone {
+			t.Errorf("%s: phone in import = %v, want %v\n%s", st.name, got, st.wantPhone, body)
+		}
+		if st.wantPhone && !strings.Contains(body, `client_conns{mac="`+phone+`",name="bob's \"pc\""} 0 `) {
+			t.Errorf("%s: vanished phone should export zero conns\n%s", st.name, body)
+		}
+		if !strings.Contains(body, `mac="`+nas+`"`) {
+			t.Errorf("%s: present nas missing from import\n%s", st.name, body)
+		}
+	}
+}
+
+func TestPollEvictsLongAbsentClients(t *testing.T) {
+	const phone, nas = "aa:bb:cc:00:00:01", "00:11:22:33:44:55"
+	tests := []struct {
+		name      string
+		absent    time.Duration // how long ago the phone was last listed
+		present   bool          // phone listed in the current poll
+		wantKept  bool
+		wantOnlne bool
+	}{
+		{"absent 1 minute stays listed offline", time.Minute, false, true, false},
+		{"absent 23h59m stays listed offline", 24*time.Hour - time.Minute, false, true, false},
+		{"absent just over 24h is evicted", 24*time.Hour + time.Second, false, false, false},
+		{"absent a week is evicted", 7 * 24 * time.Hour, false, false, false},
+		{"old seen time but present again is kept", 48 * time.Hour, true, true, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newFakeEnv(t)
+			env.set("neigh", neighOut, 0)
+			env.set("nlbw", phone+" 4 1000 1 500 1\n"+nas+" 2 2000 1 700 1\n", 0)
+			s := newTestStore(t)
+			s.namesAt = time.Now()
+			if err := s.poll(); err != nil {
+				t.Fatal(err)
+			}
+			s.mu.Lock()
+			s.seen[phone] = time.Now().Add(-tc.absent)
+			s.mu.Unlock()
+
+			if !tc.present {
+				env.set("nlbw", nas+" 2 2000 1 700 1\n", 0)
+			}
+			if err := s.poll(); err != nil {
+				t.Fatal(err)
+			}
+
+			var got *Client
+			snap := s.Snapshot()
+			for i := range snap {
+				if snap[i].MAC == phone {
+					got = &snap[i]
+				}
+			}
+			if (got != nil) != tc.wantKept {
+				t.Fatalf("phone in Snapshot() = %v, want %v: %+v", got != nil, tc.wantKept, snap)
+			}
+			if got != nil && got.Online != tc.wantOnlne {
+				t.Errorf("phone Online = %v, want %v", got.Online, tc.wantOnlne)
+			}
+			if got != nil && got.RxTotal != 1000 {
+				t.Errorf("phone RxTotal = %d, want 1000 (history kept)", got.RxTotal)
+			}
+			s.mu.RLock()
+			_, inMap := s.clients[phone]
+			_, inSeen := s.seen[phone]
+			s.mu.RUnlock()
+			if inMap != tc.wantKept || inSeen != tc.wantKept {
+				t.Errorf("phone in clients/seen = %v/%v, want %v", inMap, inSeen, tc.wantKept)
+			}
+			if s.Name(nas) != "device-4455" {
+				t.Errorf("present nas affected by eviction: Name = %q", s.Name(nas))
+			}
+		})
+	}
+}
+
+func TestPollReadsNeighbourTableOncePerPoll(t *testing.T) {
+	env := newFakeEnv(t)
+	env.set("nlbw", nlbwOut, 0)
+	env.set("neigh", neighOut, 0)
+	calls := filepath.Join(env.dir, "ip-calls")
+	env.writeFile("ip", "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \""+calls+"\"\n"+env.emit("neigh"))
+	s := newTestStore(t)
+	s.namesAt = time.Now()
+
+	for poll := 1; poll <= 3; poll++ {
+		if err := s.poll(); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(calls)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+		if len(lines) != poll {
+			t.Fatalf("after %d polls of 3 clients: %d ip invocations %q, want %d", poll, len(lines), lines, poll)
+		}
+		if lines[poll-1] != "neigh show" {
+			t.Errorf("ip invoked with %q, want \"neigh show\"", lines[poll-1])
+		}
+	}
+	// The single read still drives both IP resolution and online status.
+	snap := s.Snapshot()
+	if snap[0].IP != "192.168.1.11" || snap[0].Online || snap[1].IP != "192.168.1.10" || !snap[1].Online {
+		t.Errorf("Snapshot() IP/online from shared neigh read wrong: %+v", snap)
+	}
+}
+
+func TestReadNeigh(t *testing.T) {
+	env := newFakeEnv(t)
+	env.set("neigh", "192.168.1.10 dev br-lan lladdr AA:BB:CC:00:00:01 REACHABLE\n"+
+		"fe80::1 dev br-lan lladdr aa:bb:cc:00:00:01 STALE\n"+ // second entry: first IP wins
+		"192.168.1.11 dev br-lan lladdr 00:11:22:33:44:55 FAILED\n"+
+		"10.0.0.2 dev wan lladdr 00:11:22:33:44:66 REACHABLE\n"+ // not br-lan: IP only
+		"192.168.1.12 dev br-lan lladdr 00:11:22:33:44:77 router DELAY\n"+
+		"192.168.1.13 dev br-lan lladdr 00:11:22:33:44:88\n"+ // no state
+		"192.168.1.50 dev br-lan INCOMPLETE\n", 0)
+	online, ips := readNeigh()
+	wantIPs := map[string]string{
+		"aa:bb:cc:00:00:01": "192.168.1.10",
+		"00:11:22:33:44:55": "192.168.1.11",
+		"00:11:22:33:44:66": "10.0.0.2",
+		"00:11:22:33:44:77": "192.168.1.12",
+		"00:11:22:33:44:88": "192.168.1.13",
+	}
+	if len(ips) != len(wantIPs) {
+		t.Errorf("ips = %v, want %v", ips, wantIPs)
+	}
+	for k, v := range wantIPs {
+		if ips[k] != v {
+			t.Errorf("ips[%s] = %q, want %q", k, ips[k], v)
+		}
+	}
+	wantOnline := map[string]bool{"aa:bb:cc:00:00:01": true, "00:11:22:33:44:77": true}
+	if len(online) != len(wantOnline) {
+		t.Errorf("online = %v, want %v", online, wantOnline)
+	}
+	for k := range wantOnline {
+		if !online[k] {
+			t.Errorf("online[%s] = false, want true", k)
+		}
+	}
+
+	env.set("neigh", "", 1)
+	if online, ips := readNeigh(); len(online) != 0 || len(ips) != 0 {
+		t.Errorf("failed ip neigh: online=%v ips=%v, want empty", online, ips)
+	}
+}
+
+func TestSnapshotOrderIsStable(t *testing.T) {
+	// Ties on rx+tx (even with different rx/tx splits) are broken by MAC, so
+	// map iteration order never leaks into the table.
+	clients := []Client{
+		{MAC: "aa:00:00:00:00:05", RxTotal: 100, TxTotal: 0},
+		{MAC: "aa:00:00:00:00:01", RxTotal: 50, TxTotal: 50},
+		{MAC: "aa:00:00:00:00:03", RxTotal: 0, TxTotal: 100},
+		{MAC: "aa:00:00:00:00:09", RxTotal: 5000, TxTotal: 1},
+		{MAC: "aa:00:00:00:00:02", RxTotal: 100, TxTotal: 0},
+		{MAC: "aa:00:00:00:00:04", RxTotal: 1, TxTotal: 1},
+		{MAC: "aa:00:00:00:00:00", RxTotal: 1, TxTotal: 1},
+	}
+	want := []string{
+		"aa:00:00:00:00:09",
+		"aa:00:00:00:00:01", "aa:00:00:00:00:02", "aa:00:00:00:00:03", "aa:00:00:00:00:05",
+		"aa:00:00:00:00:00", "aa:00:00:00:00:04",
+	}
+	s := newTestStore(t)
+	for i := range clients {
+		c := clients[i]
+		s.clients[c.MAC] = &c
+	}
+	for round := 0; round < 50; round++ {
+		if round%10 == 0 { // rebuild the map so iteration order is reshuffled
+			m := map[string]*Client{}
+			for k, v := range s.clients {
+				m[k] = v
+			}
+			s.clients = m
+		}
+		got := s.Snapshot()
+		for i := range want {
+			if got[i].MAC != want[i] {
+				t.Fatalf("round %d: order = %v, want %v", round, macs(got), want)
+			}
+		}
+	}
+}
+
+func TestPollKeepsEqualTotalsInPlaceAcrossSnapshots(t *testing.T) {
+	env := newFakeEnv(t)
+	var b strings.Builder
+	for _, m := range []string{"aa:00:00:00:00:04", "aa:00:00:00:00:02", "aa:00:00:00:00:03", "aa:00:00:00:00:01"} {
+		b.WriteString(m + " 1 100 1 100 1\n")
+	}
+	env.set("nlbw", b.String(), 0)
+	s := newTestStore(t)
+	s.namesAt = time.Now()
+	want := []string{"aa:00:00:00:00:01", "aa:00:00:00:00:02", "aa:00:00:00:00:03", "aa:00:00:00:00:04"}
+	for i := 0; i < 5; i++ {
+		if err := s.poll(); err != nil {
+			t.Fatal(err)
+		}
+		if got := macs(s.Snapshot()); strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("poll %d: order = %v, want %v", i, got, want)
+		}
+	}
+}
+
+func macs(cs []Client) []string {
+	out := make([]string, len(cs))
+	for i, c := range cs {
+		out[i] = c.MAC
+	}
+	return out
 }
 
 func TestConcurrentReadsDuringPoll(t *testing.T) {

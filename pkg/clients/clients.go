@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,11 @@ type Client struct {
 	LastSeen int64   `json:"last_seen"` // unix ts of last poll with traffic
 }
 
+// evictAfter is how long a device may be absent from successful nlbw polls
+// before it is dropped from the store (and so from the API table and the
+// VictoriaMetrics push). Shorter absences keep the offline-with-history row.
+const evictAfter = 24 * time.Hour
+
 type sample struct {
 	conns  int
 	rx, tx int64
@@ -46,6 +52,7 @@ type Store struct {
 	mu         sync.RWMutex
 	clients    map[string]*Client // by MAC
 	prev       map[string]sample
+	seen       map[string]time.Time // MAC -> last successful poll listing it (drives eviction; unlike Client.LastSeen it ignores traffic)
 	prevAt     time.Time
 	interval   time.Duration
 	vmc        *vm.Client
@@ -65,6 +72,7 @@ func New(interval time.Duration, vmURL string) *Store {
 	s := &Store{
 		clients:    map[string]*Client{},
 		prev:       map[string]sample{},
+		seen:       map[string]time.Time{},
 		interval:   interval,
 		leases:     map[string]string{},
 		hosts:      map[string]string{},
@@ -80,7 +88,8 @@ func New(interval time.Duration, vmURL string) *Store {
 	return s
 }
 
-// Snapshot returns the current client list sorted by total traffic.
+// Snapshot returns the current client list sorted by total traffic
+// (descending), with MAC as a tie-breaker so the order is deterministic.
 func (s *Store) Snapshot() []Client {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -88,15 +97,13 @@ func (s *Store) Snapshot() []Client {
 	for _, c := range s.clients {
 		out = append(out, *c)
 	}
-	// sort by rx+tx total descending
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0; j-- {
-			a, b := out[j-1], out[j]
-			if a.RxTotal+a.TxTotal < b.RxTotal+b.TxTotal {
-				out[j-1], out[j] = out[j], out[j-1]
-			}
+	sort.SliceStable(out, func(i, j int) bool {
+		ti, tj := out[i].RxTotal+out[i].TxTotal, out[j].RxTotal+out[j].TxTotal
+		if ti != tj {
+			return ti > tj
 		}
-	}
+		return out[i].MAC < out[j].MAC
+	})
 	return out
 }
 
@@ -170,7 +177,7 @@ func (s *Store) poll() error {
 	}
 
 	s.refreshNames()
-	online := s.onlineMacs()
+	online, ips := readNeigh()
 
 	s.mu.Lock()
 	s.havePolled = true
@@ -190,7 +197,7 @@ func (s *Store) poll() error {
 		c.Conns = r.conns
 		c.RxTotal = r.rx
 		c.TxTotal = r.tx
-		c.IP = s.ipForMac(r.mac)
+		c.IP = ips[strings.ToLower(r.mac)]
 		if r.mac == "00:00:00:00:00:00" {
 			// nlbwmon's catch-all for traffic it cannot attribute to a MAC
 			// (locally originated or non-bridge interfaces).
@@ -210,16 +217,26 @@ func (s *Store) poll() error {
 		if c.RxRate > 0 || c.TxRate > 0 {
 			c.LastSeen = now.Unix()
 		}
-		c.Online = online[r.mac] || c.RxRate > 0 || c.TxRate > 0
-
-		// Keep lastSeen across overwrites (client is a fresh struct only once).
+		c.Online = online[strings.ToLower(r.mac)] || c.RxRate > 0 || c.TxRate > 0
+		s.seen[r.mac] = now
 	}
 
 	// Devices absent from this (successful) poll are gone: mark them offline
 	// and clear their live figures, but keep totals/name/vendor/LastSeen so
-	// the table retains their history.
+	// the table retains their history. After evictAfter of absence they are
+	// dropped entirely so the map and the VM series cannot grow forever.
 	for mac, c := range s.clients {
 		if _, present := samples[mac]; present {
+			continue
+		}
+		seen, ok := s.seen[mac]
+		if !ok { // never recorded (should not happen): start the clock now
+			seen = now
+			s.seen[mac] = now
+		}
+		if now.Sub(seen) > evictAfter {
+			delete(s.clients, mac)
+			delete(s.seen, mac)
 			continue
 		}
 		c.Online = false
@@ -227,7 +244,7 @@ func (s *Store) poll() error {
 		c.Conns = 0
 	}
 
-	// Retain lastSeen values: rebuild map of previous samples for next round.
+	// Rebuild the map of previous samples (rate baselines) for next round.
 	s.prev = samples
 	s.prevAt = now
 	s.mu.Unlock() // release before the (potentially slow) VM import
@@ -475,42 +492,43 @@ func macSuffix(mac string) string {
 	return strings.Join(f[len(f)-2:], "")
 }
 
-// ipForMac looks up the IP from the current clients snapshot or leases.
-func (s *Store) ipForMac(mac string) string {
-	// Cheap arp/neigh lookup (fast, kernel table).
+// readNeigh runs `ip neigh show` once and returns both the MACs the kernel
+// considers currently reachable on br-lan and a MAC -> IP map (first entry
+// per MAC, any device). MAC keys are lower-cased. On error both maps are
+// empty.
+func readNeigh() (online map[string]bool, ips map[string]string) {
+	online, ips = map[string]bool{}, map[string]string{}
 	out, err := exec.Command("ip", "neigh", "show").Output()
-	if err == nil {
-		for _, line := range strings.Split(string(out), "\n") {
-			f := strings.Fields(line)
-			if len(f) >= 5 && strings.EqualFold(f[4], mac) {
-				return f[0]
-			}
-		}
-	}
-	return ""
-}
-
-// onlineMacs returns MACs the kernel considers currently reachable.
-func (s *Store) onlineMacs() map[string]bool {
-	online := map[string]bool{}
-	out, err := exec.Command("ip", "neigh", "show", "dev", "br-lan").Output()
 	if err != nil {
-		return online
+		return online, ips
 	}
 	for _, line := range strings.Split(string(out), "\n") {
 		f := strings.Fields(line)
-		// format: IP dev br-lan lladdr MAC STATE
+		// format: IP dev IFACE lladdr MAC [router] STATE
 		if len(f) < 4 {
 			continue
 		}
-		state := f[len(f)-1]
-		if state == "REACHABLE" || state == "DELAY" || state == "PROBE" || state == "STALE" {
-			for i, tok := range f {
-				if strings.EqualFold(tok, "lladdr") && i+1 < len(f)-1 {
-					online[strings.ToLower(f[i+1])] = true
-				}
+		var dev, mac string
+		var hasState bool
+		for i := 1; i+1 < len(f); i++ {
+			switch strings.ToLower(f[i]) {
+			case "dev":
+				dev = f[i+1]
+			case "lladdr":
+				mac = strings.ToLower(f[i+1])
+				hasState = i+1 < len(f)-1 // MAC is not the last field
 			}
 		}
+		if mac == "" {
+			continue
+		}
+		if _, ok := ips[mac]; !ok {
+			ips[mac] = f[0]
+		}
+		state := f[len(f)-1]
+		if hasState && dev == "br-lan" && (state == "REACHABLE" || state == "DELAY" || state == "PROBE" || state == "STALE") {
+			online[mac] = true
+		}
 	}
-	return online
+	return online, ips
 }

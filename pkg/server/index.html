@@ -260,24 +260,64 @@
     .m-sub { font-size: var(--t-xs); color: var(--ink-2); margin-top: 2px; min-height: 1.2em; }
     .m-spark { display: block; width: 100%; height: 26px; margin-top: 4px; overflow: visible; }
     .meter-click { cursor: pointer; }
-    /* Compact trend strip: denser grid, smaller numerals, tighter padding. */
-    .trend-strip { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
-    .trend-strip .meter { padding: 7px var(--s3) 6px; }
-    .trend-strip .m-val { font-size: var(--t-base); font-weight: 600; margin-top: 2px; }
-    .trend-strip .m-val .ro-unit { font-size: var(--t-xs); }
-    .trend-strip .m-sub { min-height: 0; line-height: 1.3; }
-    .trend-strip .m-lab { font-size: var(--t-xs); }
-    /* Trends tab: one continuous, dense surface instead of stacked boxes —
-       tight padding, hairline dividers only between sections, small caps
-       section titles. */
-    #tab-trends .sect { --pad: var(--s4); padding: 8px var(--s4) 10px; border-top: 0; border-bottom: 1px solid var(--hair); }
+    /* Trends tab: quiet ledgers on one continuous surface. No boxed
+       wells; hairline rows, small-caps section titles, one line per fact.
+       Secondary detail (method notes, sample counts, older days, rarely
+       seen devices) sits behind <details> disclosures. */
+    #tab-trends .sect { --pad: var(--s4); padding: 10px var(--s4) 12px; border-top: 0; border-bottom: 1px solid var(--hair); }
     #tab-trends .sect:last-child { border-bottom: 0; }
-    #tab-trends .sect-head { margin-bottom: 5px; gap: var(--s2); }
-    #tab-trends .h2 { font-size: var(--t-xs); font-weight: 650; color: var(--ink-2);
-      text-transform: uppercase; letter-spacing: 0.07em; }
-    #tab-trends .h2 .sub { font-size: var(--t-xs); margin-left: var(--s2); }
-    #tab-trends .mt3 { margin-top: var(--s1); }
-    #tab-trends .note { font-size: var(--t-2xs); }
+    #tab-trends .sect-head { margin-bottom: 4px; gap: var(--s2); }
+    #tab-trends .h2 { font-size: var(--t-2xs); font-weight: 650; color: var(--ink-2);
+      text-transform: uppercase; letter-spacing: 0.08em; }
+    #tab-trends .h2 .sub { font-size: var(--t-xs); margin-left: var(--s2); text-transform: none; letter-spacing: 0;
+      font-weight: 400; color: var(--ink-3); }
+    #tab-trends .note { font-size: var(--t-xs); color: var(--ink-3); }
+    .tr-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s2) var(--s3); flex-wrap: wrap;
+      padding: 8px var(--s4); border-bottom: 1px solid var(--hair); }
+    .tr-bar .h2 { white-space: nowrap; }
+    .tr-ctl { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+    .tr-custom { display: none; align-items: center; gap: var(--s2); flex-wrap: wrap; flex-basis: 100%;
+      justify-content: flex-end; padding-top: 2px; }
+    .tr-bar.custom-open .tr-custom { display: flex; }
+    .tr-custom .input { width: auto; padding: 3px 6px; font-size: var(--t-xs); font-family: var(--f-num); color-scheme: light dark; }
+    .tr-custom .btn-q { font-size: var(--t-xs); font-weight: 600; padding: 3px 9px; border-radius: var(--r-sm);
+      border: 1px solid var(--groove); background: var(--well); color: var(--ink); }
+    .tr-custom .btn-q:hover { border-color: var(--ink-3); }
+    .tr-custom .btn-q.ghost { background: none; border-color: transparent; color: var(--ink-2); }
+    .tr-custom .btn-q.ghost:hover { color: var(--ink); }
+    .tr-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .tr-col { min-width: 0; }
+    .tr-col + .tr-col { border-left: 1px solid var(--hair); }
+    /* Ledger table: label column in the UI face, readings in tabular mono. */
+    .tl { width: 100%; border-collapse: collapse; font-size: var(--t-sm); }
+    .tl th { font-size: var(--t-2xs); font-weight: 500; color: var(--ink-3); text-align: right; white-space: nowrap;
+      padding: 0 0 3px var(--s5); font-family: var(--f-ui); width: 1%; }
+    .tl td { padding: 4px 0 4px var(--s5); border-top: 1px solid var(--hair); text-align: right; white-space: nowrap;
+      font-family: var(--f-num); font-variant-numeric: tabular-nums; color: var(--ink); font-size: var(--t-xs); }
+    .tl tbody:first-child tr:first-child td { border-top: 0; }
+    .tl th:first-child, .tl td:first-child { text-align: left; padding-left: 0; width: auto; }
+    .tl td:first-child { font-family: var(--f-ui); font-size: var(--t-sm); color: var(--ink-2); white-space: normal; }
+    .tl td .u, .tl td .aux { color: var(--ink-3); }
+    .tl td .aux { font-family: var(--f-ui); font-size: var(--t-xs); margin-left: 6px; }
+    .tl td.dim, .tl tr.dim td { color: var(--ink-3); }
+    .tl .band { font-family: var(--f-num); font-size: var(--t-2xs); color: var(--ink-3); margin-left: 6px; }
+    .tl .ok { color: var(--ok); } .tl .warn { color: var(--warn); } .tl .crit { color: var(--crit); }
+    .tl + .tl.kv { margin-top: 6px; }
+    .tl td:first-child .aux { margin-left: var(--s2); }
+    /* Quiet disclosure under a ledger. */
+    .tr-more { margin-top: 2px; }
+    .tr-more > summary { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-xs); color: var(--ink-3);
+      padding: 4px 0 0; }
+    .tr-more > summary:hover { color: var(--ink); }
+    .tr-more > summary .chev svg { width: 11px; height: 11px; }
+    .tr-more[open] > summary { margin-bottom: 2px; }
+    .tr-more .note { margin: 4px 0 0; }
+    @media (max-width: 900px) {
+      .tr-grid { grid-template-columns: minmax(0, 1fr); }
+      .tr-col + .tr-col { border-left: 0; border-top: 1px solid var(--hair); }
+      .tr-custom { justify-content: flex-start; }
+      .tl td, .tl th { padding-left: var(--s3); }
+    }
     .meter-click:hover .meter { background: color-mix(in srgb, var(--well) 70%, var(--panel)); }
     .bar { height: 4px; background: var(--hair); border-radius: 2px; overflow: hidden; margin-top: 6px; }
     .bar > i { display: block; height: 100%; background: var(--ink-2); border-radius: 2px; }
@@ -582,57 +622,64 @@
     <!-- ═══ Tab: Trends ══════════════════════════════════════════════════ -->
     <section id="tab-trends" role="tabpanel" class="hidden">
 
-      <!-- Window: presets or a custom from/to range -->
-      <section class="sect">
-        <div class="sect-head">
-          <h2 class="h2">Trends <span class="sub" id="tr-window-sub">last 24 hours</span></h2>
-          <div style="display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap">
-            <div class="seg" role="group" aria-label="Trends window">
-              <button data-trange="6h" class="trange-btn">6H</button>
-              <button data-trange="12h" class="trange-btn">12H</button>
-              <button data-trange="24h" class="trange-btn">24H</button>
-              <button data-trange="7d" class="trange-btn">7D</button>
-              <button data-trange="30d" class="trange-btn">30D</button>
-            </div>
-            <input id="tr-from" class="input" style="width:auto;padding:4px 6px;font-size:var(--t-xs)" type="datetime-local" aria-label="From">
-            <span class="xs muted">&rarr;</span>
-            <input id="tr-to" class="input" style="width:auto;padding:4px 6px;font-size:var(--t-xs)" type="datetime-local" aria-label="To">
-            <button id="tr-apply" class="key" style="cursor:pointer">Apply</button>
-            <button id="tr-now" class="key" style="cursor:pointer">Now</button>
+      <!-- Window: presets, or a custom from/to range revealed on demand -->
+      <div class="tr-bar" id="tr-bar">
+        <h2 class="h2">Trends <span class="sub" id="tr-window-sub">last 24 hours</span></h2>
+        <div class="tr-ctl">
+          <div class="seg" role="group" aria-label="Trends window">
+            <button data-trange="6h" class="trange-btn">6H</button>
+            <button data-trange="12h" class="trange-btn">12H</button>
+            <button data-trange="24h" class="trange-btn">24H</button>
+            <button data-trange="7d" class="trange-btn">7D</button>
+            <button data-trange="30d" class="trange-btn">30D</button>
+            <button id="tr-custom-toggle" aria-expanded="false" aria-controls="tr-custom">Custom</button>
           </div>
         </div>
-      </section>
+        <div class="tr-custom" id="tr-custom">
+          <input id="tr-from" class="input" type="datetime-local" aria-label="From">
+          <span class="xs faint" aria-hidden="true">&rarr;</span>
+          <input id="tr-to" class="input" type="datetime-local" aria-label="To">
+          <button id="tr-apply" class="btn-q">Apply</button>
+          <button id="tr-now" class="btn-q ghost">Clear</button>
+        </div>
+      </div>
 
-      <!-- Latency & reliability -->
-      <section class="sect">
-        <div class="sect-head"><h2 class="h2">Latency &amp; reliability <span class="sub">p50 / p95 / p99</span></h2></div>
-        <div id="tr-lat-strip" class="meters trend-strip"></div>
-        <p class="note mt3">Half your pings are faster than p50, only 5% worse than p95. The &ldquo;under load&rdquo; number is the p95 ping during a full-rate download.</p>
-      </section>
-
-      <!-- Shaper & queue -->
-      <section class="sect">
-        <div class="sect-head"><h2 class="h2">Shaper &amp; queue <span class="sub">CAKE utilisation and AQM activity</span></h2></div>
-        <div id="tr-shaper-strip" class="meters trend-strip"></div>
-      </section>
-
-      <!-- Router headroom -->
-      <section class="sect">
-        <div class="sect-head"><h2 class="h2">Router headroom <span class="sub">CPU, temperature, connections</span></h2></div>
-        <div id="tr-head-strip" class="meters trend-strip"></div>
-      </section>
-
-      <!-- Wi-Fi quality -->
-      <section class="sect">
-        <div class="sect-head"><h2 class="h2">Wi-Fi quality <span class="sub">per client, over the window</span></h2></div>
-        <div id="tr-wifi-strip" class="meters trend-strip"></div>
-      </section>
-
-      <!-- Bufferbloat grade history: daily probe results, both directions -->
-      <section class="sect">
-        <div class="sect-head"><h2 class="h2">Bufferbloat grade history <span class="sub">daily probe grades</span></h2></div>
-        <div id="tr-bloat" class="rows"></div>
-      </section>
+      <div class="tr-grid">
+        <div class="tr-col">
+          <!-- Latency: per-target percentiles, jitter, latency under load -->
+          <section class="sect">
+            <div class="sect-head"><h2 class="h2">Latency</h2></div>
+            <div id="tr-lat-strip"></div>
+          </section>
+          <!-- Reliability ledger: loss and WAN session changes -->
+          <section class="sect">
+            <div class="sect-head"><h2 class="h2">Reliability</h2></div>
+            <div id="tr-rel-strip"></div>
+          </section>
+          <!-- Router headroom -->
+          <section class="sect">
+            <div class="sect-head"><h2 class="h2">Router headroom</h2></div>
+            <div id="tr-head-strip"></div>
+          </section>
+        </div>
+        <div class="tr-col">
+          <!-- Shaper & queue: down/up side by side -->
+          <section class="sect">
+            <div class="sect-head"><h2 class="h2">Shaper &amp; queue</h2></div>
+            <div id="tr-shaper-strip"></div>
+          </section>
+          <!-- Wi-Fi quality: per-device signal, link and presence -->
+          <section class="sect">
+            <div class="sect-head"><h2 class="h2">Wi-Fi quality <span class="sub" id="tr-wifi-sub"></span></h2></div>
+            <div id="tr-wifi-strip"></div>
+          </section>
+          <!-- Bufferbloat grade history: daily probe results, both directions -->
+          <section class="sect">
+            <div class="sect-head"><h2 class="h2">Bufferbloat grades</h2></div>
+            <div id="tr-bloat"></div>
+          </section>
+        </div>
+      </div>
     </section>
 
     <!-- ═══ Tab: SQM (live queue stats) ══════════════════════════════════ -->
@@ -2358,7 +2405,13 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
         document.getElementById('tr-from').value = '';
         document.getElementById('tr-to').value = '';
         _setPillBtns('.trange-btn', 'trange', trendRange);
+        markTrendCustom(false);
+        setTrendCustomOpen(false);
         loadTrendsPanels();
+      }
+      if (e.target.closest('#tr-custom-toggle')) {
+        const bar = document.getElementById('tr-bar');
+        setTrendCustomOpen(!(bar && bar.classList.contains('custom-open')));
       }
       if (e.target.closest('#tr-apply')) applyTrendCustom();
       if (e.target.closest('#tr-now')) {
@@ -2366,6 +2419,8 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
         document.getElementById('tr-from').value = '';
         document.getElementById('tr-to').value = '';
         _setPillBtns('.trange-btn', 'trange', trendRange);
+        markTrendCustom(false);
+        setTrendCustomOpen(false);
         loadTrendsPanels();
       }
       const wr = e.target.closest('.wanrange-btn');
@@ -2862,22 +2917,39 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
     }
 
     // ── Trends tab ──────────────────────────────────────────────────────
-    // One fetch of /api/percentiles feeds the whole tab. Every strip
-    // degrades to an honest "no data" note when a series is missing.
+    // One fetch of /api/percentiles feeds the whole tab. Each section is a
+    // quiet ledger (one line per fact); secondary detail lives behind a
+    // <details> disclosure whose open state survives re-renders. Every
+    // section degrades to an honest "no data" note when a series is missing.
 
-    function trendCard(label, big, sub) {
-      return '<div class="meter">' +
-        '<div class="m-lab">' + label + '</div>' +
-        '<div class="m-val">' + big + '</div>' +
-        '<div class="m-sub">' + sub + '</div></div>';
+    const TR_CHEV = '<span class="chev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>';
+    const trOpen = new Set();   // keys of disclosures the user has opened
+    document.addEventListener('toggle', e => {
+      const d = e.target;
+      if (!d.matches || !d.matches('details.tr-more') || !d.dataset.k) return;
+      if (d.open) trOpen.add(d.dataset.k); else trOpen.delete(d.dataset.k);
+    }, true);
+    function trMore(key, label, inner) {
+      return '<details class="tr-more" data-k="' + key + '"' + (trOpen.has(key) ? ' open' : '') + '>' +
+        '<summary>' + TR_CHEV + label + '</summary>' + inner + '</details>';
     }
+    // Key/value ledger: label (with a dim qualifier) | value on the right
+    // edge, so every reading in a column shares one alignment line.
+    function trKV(rows) {
+      return '<table class="tl kv"><tbody>' + rows.map(r =>
+        '<tr><td>' + r[0] + (r[2] ? '<span class="aux">' + r[2] + '</span>' : '') + '</td>' +
+        '<td' + (r[3] ? ' class="' + r[3] + '"' : '') + '>' + r[1] + '</td></tr>').join('') + '</tbody></table>';
+    }
+    function trTable(head, rows, cls) {
+      return '<table class="tl' + (cls ? ' ' + cls : '') + '"><thead><tr>' + head.map(x => '<th>' + x + '</th>').join('') +
+        '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+    }
+    const trU = u => ' <span class="u">' + u + '</span>';
 
-    function gradeColor(g) {
-      if (!g) return 'var(--ink-2)';
+    function gradeCls(g) {
+      if (!g || g === '—') return 'dim';
       const c = g[0].toUpperCase();
-      if (c === 'A') return 'var(--good)';
-      if (c === 'B') return 'var(--warn)';
-      return 'var(--crit)';
+      return c === 'A' ? 'ok' : c === 'B' ? 'warn' : 'crit';
     }
 
     async function loadTrendsPanels() {
@@ -2902,96 +2974,171 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       }
       const winLabel = trendCustom ? 'custom window' : trendRange;
 
-      // ── Latency & reliability ────────────────────────────────────────
+      // ── Latency: per-target p50/p95/p99, then jitter and under-load ───
       const lat = document.getElementById('tr-lat-strip');
       if (lat) {
         let html = '';
-        (t.latency || []).forEach(tg => {
-          const nm = tg.name || 'wan';
-          html += trendCard('Line latency &middot; ' + h(nm),
-            tg.p50.toFixed(1) + ' / ' + tg.p95.toFixed(1) + ' / ' + tg.p99.toFixed(1) + ' ms',
-            'p50 / p95 / p99 &middot; ' + tg.samples + ' samples');
-        });
-        if (t.stddev) html += trendCard('Jitter', '±' + t.stddev.toFixed(1) + ' ms', 'ping stddev');
-        if (d.loaded) html += trendCard('Under load &middot; probe',
-          d.loaded.p95.toFixed(1) + ' ms',
-          'p95 ping while downloading' + (d.idle ? ' (idle ' + d.idle.p50.toFixed(1) + ' ms)' : ''));
-        if (d.loss) html += trendCard('Packet loss', (d.loss.p95 * 100).toFixed(2) + ' %',
-          'p95 rate' + (t.wan_p99_loss ? ' &middot; p99 ' + (t.wan_p99_loss * 100).toFixed(2) + ' %' : ''));
-        html += trendCard('Line stability', t.wan_changes === 0 ? 'no drops' : t.wan_changes + ' change' + (t.wan_changes === 1 ? '' : 's'),
-          'PPPoE session transitions &middot; ' + winLabel);
+        const tgs = t.latency || [];
+        if (tgs.length) {
+          html += trTable(['Target', 'p50', 'p95', 'p99'], tgs.map(tg =>
+            '<tr><td>' + h(tg.name || 'wan') + '</td><td>' + tg.p50.toFixed(1) + '</td><td>' + tg.p95.toFixed(1) + '</td><td>' +
+            tg.p99.toFixed(1) + trU('ms') + '</td></tr>'));
+        }
+        const kv = [];
+        if (t.stddev) kv.push(['Jitter', '±' + t.stddev.toFixed(1) + trU('ms'), 'ping stddev']);
+        if (d.loaded) kv.push(['Under load', d.loaded.p95.toFixed(1) + trU('ms'),
+          'p95 while downloading' + (d.idle ? ' · idle ' + d.idle.p50.toFixed(1) + ' ms' : '')]);
+        if (kv.length) html += trKV(kv);
+        if (html) {
+          const samples = tgs.map(tg => h(tg.name || 'wan') + ' ' + fmtNum(tg.samples));
+          if (d.loaded && d.loaded.samples) samples.push('load probe ' + fmtNum(d.loaded.samples));
+          html += trMore('lat', 'How to read this',
+            '<p class="note">Half your pings are faster than p50, only 5% are worse than p95. ' +
+            '&ldquo;Under load&rdquo; is the p95 ping during a full-rate download.' +
+            (samples.length ? '<br>Samples: <span class="num">' + samples.join(' · ') + '</span>' : '') + '</p>');
+        }
         lat.innerHTML = html || '<p class="note">No latency history yet — numbers appear as VictoriaMetrics collects.</p>';
       }
 
-      // ── Shaper & queue ───────────────────────────────────────────────
+      // ── Reliability ledger: loss and WAN session changes ─────────────
+      const rel = document.getElementById('tr-rel-strip');
+      if (rel) {
+        const kv = [];
+        if (d.loss) kv.push(['Packet loss p95', (d.loss.p95 * 100).toFixed(2) + trU('%'), '']);
+        if (typeof t.wan_p99_loss === 'number') kv.push(['Packet loss p99', (t.wan_p99_loss * 100).toFixed(2) + trU('%'), '']);
+        kv.push(['WAN drops', t.wan_changes === 0 ? 'none' : t.wan_changes + ' change' + (t.wan_changes === 1 ? '' : 's'),
+          'PPPoE session transitions · ' + winLabel]);
+        rel.innerHTML = trKV(kv);
+      }
+
+      // ── Shaper & queue: download and upload side by side ─────────────
       const sh = document.getElementById('tr-shaper-strip');
       if (sh) {
-        let html = '';
-        [['down', 'Download'], ['up', 'Upload']].forEach(([k, label]) => {
-          const s = t.shaper && t.shaper[k];
-          if (s && s.ceiling_mbps > 0) {
-            html += trendCard(label + ' utilisation', s.p95_mbps.toFixed(0) + ' <span class="ro-unit">/ ' + s.ceiling_mbps.toFixed(0) + ' Mbit/s</span>',
-              'p95 vs ceiling' + (s.pinned_pct >= 0.1 ? ' — pinned above 90% for ' + s.pinned_pct.toFixed(1) + '% of the window' : ' — ceiling holds comfortably'));
-          }
-          const a = t.aqm && t.aqm[k];
-          if (a) {
-            html += trendCard(label + ' AQM', a.marks.toFixed(0) + ' <span class="ro-unit">marks</span> · ' + a.drops.toFixed(0) + ' <span class="ro-unit">drops</span>',
-              'in ' + winLabel + ' &middot; queue p95 ' + a.peak_delay_p95.toFixed(2) + ' ms of the ' + a.target_ms.toFixed(1) + ' ms target');
-          }
-        });
-        sh.innerHTML = html || '<p class="note">No SQM history yet — the shaper trends appear as collectd accumulates data.</p>';
+        const dirs = ['down', 'up'];
+        const sv = k => { const s = t.shaper && t.shaper[k]; return s && s.ceiling_mbps > 0 ? s : null; };
+        const av = k => t.aqm && t.aqm[k];
+        const hasS = dirs.some(sv), hasA = dirs.some(av);
+        const dash = '<span class="u">—</span>';
+        const row = (label, fn) => '<tr><td>' + label + '</td>' + dirs.map(k => fn(k)).join('') + '</tr>';
+        const rows = [];
+        if (hasS) {
+          rows.push(row('Rate p95 / ceiling' + trU('Mbit/s'), k => { const s = sv(k);
+            return '<td>' + (s ? s.p95_mbps.toFixed(0) + ' <span class="u">/ ' + s.ceiling_mbps.toFixed(0) + '</span>' : dash) + '</td>'; }));
+          rows.push(row('Pinned above 90%', k => { const s = sv(k);
+            if (!s) return '<td>' + dash + '</td>';
+            return s.pinned_pct >= 0.1 ? '<td class="warn">' + s.pinned_pct.toFixed(1) + trU('%') + '</td>' : '<td class="dim">never</td>'; }));
+        }
+        if (hasA) {
+          rows.push(row('Queue delay p95 / target' + trU('ms'), k => { const a = av(k);
+            return '<td' + (a && a.peak_delay_p95 > a.target_ms ? ' class="warn"' : '') + '>' +
+              (a ? a.peak_delay_p95.toFixed(2) + ' <span class="u">/ ' + a.target_ms.toFixed(1) + '</span>' : dash) + '</td>'; }));
+          rows.push(row('AQM drops', k => { const a = av(k); return '<td>' + (a ? fmtNum(a.drops.toFixed(0)) : dash) + '</td>'; }));
+          rows.push(row('AQM marks', k => { const a = av(k); return '<td>' + (a ? fmtNum(a.marks.toFixed(0)) : dash) + '</td>'; }));
+        }
+        sh.innerHTML = rows.length ? trTable(['', 'Down', 'Up'], rows)
+          : '<p class="note">No SQM history yet — the shaper trends appear as collectd accumulates data.</p>';
       }
 
       // ── Router headroom ──────────────────────────────────────────────
       const hd = document.getElementById('tr-head-strip');
       if (hd) {
-        let html = '';
+        const kv = [];
         if (t.headroom) {
-          html += trendCard('CPU p95', t.headroom.cpu_p95.toFixed(0) + ' %',
-            'busy % across cores' + (t.headroom.load_p95 ? ' &middot; load p95 ' + t.headroom.load_p95.toFixed(2) : ''));
-          if (t.headroom.temp_max) html += trendCard('Temperature peak', t.headroom.temp_max.toFixed(0) + ' °C', 'SoC max over the window');
-          if (t.headroom.conntrack_p95) html += trendCard('Conntrack p95', t.headroom.conntrack_p95.toFixed(0), 'tracked connections, 95th pct');
+          kv.push(['CPU p95', t.headroom.cpu_p95.toFixed(0) + trU('%'),
+            'busy across cores' + (t.headroom.load_p95 ? ' · load p95 ' + t.headroom.load_p95.toFixed(2) : '')]);
+          if (t.headroom.temp_max) kv.push(['Temperature peak', t.headroom.temp_max.toFixed(0) + trU('°C'), 'SoC max']);
+          if (t.headroom.conntrack_p95) kv.push(['Conntrack p95', fmtNum(t.headroom.conntrack_p95.toFixed(0)), 'tracked connections']);
         }
-        hd.innerHTML = html || '<p class="note">No headroom history yet — collectd has to run for a while first.</p>';
+        hd.innerHTML = kv.length ? trKV(kv) : '<p class="note">No headroom history yet — collectd has to run for a while first.</p>';
       }
 
-      // ── Wi-Fi quality ────────────────────────────────────────────────
+      // ── Wi-Fi quality: one row per device, rarely-seen ones folded ───
       const wf = document.getElementById('tr-wifi-strip');
       if (wf) {
         let html = '';
-        if (t.wifi_clients) {
-          html += trendCard('Concurrent clients', t.wifi_clients.p95.toFixed(0), 'p95 over the window');
+        const wsub = document.getElementById('tr-wifi-sub');
+        if (wsub) wsub.textContent = t.wifi_clients ? t.wifi_clients.p95.toFixed(0) + ' concurrent clients at p95' : '';
+        const devs = (t.wifi_devices || []).slice().sort((x, y) => y.present_pct - x.present_pct);
+        if (devs.length) {
+          const devRow = (w, dim) => {
+            const nm = (w.name && w.name !== 'unknown') ? w.name : w.mac.slice(0, 8);
+            return '<tr' + (dim ? ' class="dim"' : '') + '><td>' + h(nm) + '<span class="band">' + h(w.band) + '</span></td>' +
+              '<td' + (w.signal_p95 < 50 ? ' class="warn"' : '') + '>' + w.signal_p95.toFixed(0) + trU('%') + '</td>' +
+              '<td>' + (w.link_p95 ? w.link_p95.toFixed(0) : '<span class="u">—</span>') + '</td>' +
+              '<td>' + w.present_pct.toFixed(0) + trU('%') + '</td></tr>';
+          };
+          // Devices seen <10% of the window go behind a disclosure, as long
+          // as at least a few stay visible.
+          let vis = devs.filter(w => w.present_pct >= 10);
+          if (vis.length < 3) vis = devs.slice(0, Math.min(devs.length, 5));
+          if (vis.length > 8) vis = vis.slice(0, 8);
+          const rest = devs.slice(vis.length);
+          const head = ['Device', 'Worst signal', 'Link Mbit/s', 'Seen'];
+          html += trTable(head, vis.map(w => devRow(w, false)), 'wifi');
+          html += trMore('wifi', rest.length ? rest.length + ' rarely seen device' + (rest.length === 1 ? '' : 's') : 'How to read this',
+            (rest.length ? trTable(head, rest.map(w => devRow(w, true)), 'wifi') : '') +
+            '<p class="note">Worst signal is the weakest 5% of readings; link is the p95 negotiated rate; ' +
+            'seen is the share of the window the device was connected.</p>');
         }
-        (t.wifi_devices || []).forEach(w => {
-          const nm = (w.name && w.name !== 'unknown') ? w.name : w.mac.slice(0, 8);
-          html += trendCard(nm + ' <span class="sub">' + w.band + '</span>',
-            w.signal_p95.toFixed(0) + ' <span class="ro-unit">% signal</span>',
-            'worst 5%' + (w.link_p95 ? ' &middot; link p95 ' + w.link_p95.toFixed(0) + ' Mbit/s' : '') +
-            ' &middot; seen ' + w.present_pct.toFixed(0) + '%');
-        });
         wf.innerHTML = html || '<p class="note">No Wi-Fi history yet — trends appear once the Orbi poller has run for a while.</p>';
       }
 
-      // ── Bufferbloat grade history ────────────────────────────────────
+      // ── Bufferbloat grade history: one row per day, both directions ──
       const bh = document.getElementById('tr-bloat');
       if (bh) {
         // Bloat is often sub-millisecond: toFixed(0) would render every day as "+0 ms".
         const fmtBloatMs = v => v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2);
-        let html = '';
-        [['down', 'Download'], ['up', 'Upload']].forEach(([k, label]) => {
-          const days = (t.bloat && t.bloat[k]) || [];
-          if (!days.length) return;
-          html += '<div class="xs muted" style="margin-top:10px">' + label + '</div>';
-          days.slice(-14).forEach(day => {
-            const g = (day.grades && day.grades[day.grades.length - 1]) || '—';
-            html += '<div class="lrow" style="display:flex;gap:10px;align-items:baseline;padding:4px 0">' +
-              '<span class="t num" style="min-width:5.5rem">' + day.day.slice(5) + '</span>' +
-              '<span class="num strong" style="min-width:3rem;color:' + gradeColor(g) + '">' + h(g) + '</span>' +
-              '<span class="s num">+' + fmtBloatMs(day.max_ms) + ' ms peak &middot; ' + fmtBloatMs(day.avg_ms) + ' ms avg &middot; ' + day.runs + ' run' + (day.runs === 1 ? '' : 's') + '</span></div>';
-          });
-        });
-        bh.innerHTML = html || '<p class="note">No probe history yet — grades appear after the hourly probe has run (11:00–20:00).</p>';
+        const byDay = {};
+        ['down', 'up'].forEach(k => ((t.bloat && t.bloat[k]) || []).slice(-14).forEach(day => {
+          (byDay[day.day] = byDay[day.day] || {})[k] = day;
+        }));
+        const days = Object.keys(byDay).sort().reverse();
+        if (!days.length) {
+          bh.innerHTML = '<p class="note">No probe history yet — grades appear after the hourly probe has run (11:00–20:00).</p>';
+        } else {
+          const cells = x => {
+            if (!x) return '<td class="dim">—</td><td><span class="u">—</span></td>';
+            const g = (x.grades && x.grades[x.grades.length - 1]) || '—';
+            return '<td class="' + gradeCls(g) + '">' + h(g) + '</td>' +
+              '<td>+' + fmtBloatMs(x.max_ms) + ' <span class="u">/ ' + fmtBloatMs(x.avg_ms) + '</span></td>';
+          };
+          const dayRow = dk => {
+            const r = byDay[dk], rd = r.down ? r.down.runs : null, ru = r.up ? r.up.runs : null;
+            const runs = rd != null && ru != null && rd !== ru ? rd + ' / ' + ru : (rd != null ? rd : ru);
+            return '<tr><td class="num">' + dk.slice(5) + '</td>' + cells(r.down) + cells(r.up) + '<td>' + runs + '</td></tr>';
+          };
+          const head = ['Day', 'Down', 'peak / avg ms', 'Up', 'peak / avg ms', 'Runs'];
+          const VIS = 7;
+          let html = trTable(head, days.slice(0, VIS).map(dayRow), 'bloat');
+          if (days.length > VIS) {
+            const n = days.length - VIS;
+            html += trMore('bloat', n + ' earlier day' + (n === 1 ? '' : 's'), trTable(head, days.slice(VIS).map(dayRow), 'bloat'));
+          }
+          bh.innerHTML = html;
+        }
       }
+    }
+
+    // Custom window row: shown on demand from the "Custom" segment.
+    function setTrendCustomOpen(open) {
+      const bar = document.getElementById('tr-bar');
+      const btn = document.getElementById('tr-custom-toggle');
+      if (!bar || !btn) return;
+      bar.classList.toggle('custom-open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        const pad = n => String(n).padStart(2, '0');
+        const loc = dt => dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate()) + 'T' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+        const f = document.getElementById('tr-from'), to = document.getElementById('tr-to');
+        if (!f.value) f.value = loc(new Date(Date.now() - 24 * 3600 * 1000));
+        if (!to.value) to.value = loc(new Date());
+      }
+    }
+    function markTrendCustom(on) {
+      const btn = document.getElementById('tr-custom-toggle');
+      if (!btn) return;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
 
     // Custom from/to window: read the datetime-local inputs and re-query.
@@ -3005,6 +3152,7 @@ var uPlot=function(){"use strict";const e="u-off",l="u-label",t="width",n="heigh
       if (end > Date.now() / 1000) end = Math.floor(Date.now() / 1000);
       trendCustom = { start: start, end: end };
       document.querySelectorAll('.trange-btn').forEach(b => { b.classList.remove('on'); b.setAttribute('aria-pressed', 'false'); });
+      markTrendCustom(true);
       loadTrendsPanels();
     }
 

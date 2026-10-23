@@ -315,7 +315,7 @@ func TestEvalClock(t *testing.T) {
 }
 
 func TestEvalStorage(t *testing.T) {
-	healthy := sysmon.DiskState{Available: true, PercentUsed: 3, AvailableSpare: 100, TempC: 41}
+	healthy := sysmon.DiskState{Available: true, PercentUsed: 3, AvailableSpare: 100, SpareKnown: true, TempC: 41}
 	mod := func(f func(*sysmon.DiskState)) sysmon.DiskState { s := healthy; f(&s); return s }
 	cases := []struct {
 		name string
@@ -334,12 +334,20 @@ func TestEvalStorage(t *testing.T) {
 			want{state: StateCrit, contains: []string{"critical_warning=4"}}},
 		{"spare exhausted", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 5 }),
 			want{state: StateCrit, contains: []string{"spare 5%"}}},
-		{"spare not reported is unknown, not crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0 }),
+		{"reported zero spare is crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0 }),
+			want{state: StateCrit, contains: []string{"critical_warning=0", "spare 0%"}}},
+		{"missing spare is unknown", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.SpareKnown = false }),
 			want{state: StateUnknown, contains: []string{"did not report its available spare"}}},
-		{"spare not reported still surfaces media errors", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.MediaErrors = 3 }),
+		{"missing spare with nonzero stale value is still unknown", mod(func(s *sysmon.DiskState) { s.SpareKnown = false }),
+			want{state: StateUnknown, contains: []string{"did not report its available spare"}}},
+		{"missing spare plus media errors is warn", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.SpareKnown = false; s.MediaErrors = 3 }),
 			want{state: StateWarn, contains: []string{"3 media errors"}}},
-		{"zero spare flagged by critical_warning stays crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.CriticalWarning = 1 }),
+		{"missing spare plus critical_warning is crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.SpareKnown = false; s.CriticalWarning = 1 }),
+			want{state: StateCrit, contains: []string{"critical_warning=1", "spare not reported"}, absent: []string{"spare 0%"}}},
+		{"zero spare plus critical_warning is crit", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 0; s.CriticalWarning = 1 }),
 			want{state: StateCrit, contains: []string{"critical_warning=1", "spare 0%"}}},
+		{"spare at threshold is ok", mod(func(s *sysmon.DiskState) { s.AvailableSpare = 10 }),
+			want{state: StateOK}},
 		{"media errors", mod(func(s *sysmon.DiskState) { s.MediaErrors = 2 }),
 			want{state: StateWarn, contains: []string{"2 media errors"}}},
 		{"worn out", mod(func(s *sysmon.DiskState) { s.PercentUsed = 93 }),

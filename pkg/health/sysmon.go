@@ -104,16 +104,17 @@ func evalStorage(st sysmon.DiskState) Check {
 	}
 
 	val := fmt.Sprintf("up %s", trimAge(time.Since(time.Now().Add(-time.Duration(uptimeSeconds()*float64(time.Second))))))
-	// DiskState cannot distinguish an absent available_spare field from a
-	// reported 0, so a zero spare with a clean critical_warning is treated
-	// as "not reported": per the NVMe spec, a drive whose spare has truly
-	// fallen below its threshold sets critical_warning bit 0, so a genuine
-	// 0% spare still lands in the critical branch below.
-	spareKnown := st.AvailableSpare != 0 || st.CriticalWarning != 0
-	bad := st.CriticalWarning != 0 || (spareKnown && st.AvailableSpare < 10)
+	// Only judge the spare when the drive actually reported it; a real 0%
+	// spare is critical, an absent field is unknown (below). A set
+	// critical_warning is real data and is always critical.
+	spare := "spare not reported"
+	if st.SpareKnown {
+		spare = fmt.Sprintf("spare %.0f%%", st.AvailableSpare)
+	}
+	bad := st.CriticalWarning != 0 || (st.SpareKnown && st.AvailableSpare < 10)
 	if bad {
 		return Check{Name: name, State: StateCrit, Value: val,
-			Detail: fmt.Sprintf("the NVMe holding the monitoring data reports a critical condition (critical_warning=%d, spare %.0f%%) — replace it before it dies and takes the history with it.%s", st.CriticalWarning, st.AvailableSpare, extra), NumState: 2}
+			Detail: fmt.Sprintf("the NVMe holding the monitoring data reports a critical condition (critical_warning=%d, %s) — replace it before it dies and takes the history with it.%s", st.CriticalWarning, spare, extra), NumState: 2}
 	}
 	if st.MediaErrors > 0 {
 		return Check{Name: name, State: StateWarn, Value: val,
@@ -123,7 +124,7 @@ func evalStorage(st sysmon.DiskState) Check {
 		return Check{Name: name, State: StateWarn, Value: val,
 			Detail: fmt.Sprintf("the NVMe has used %.0f%% of its rated write endurance. Fine for now, but plan a replacement.%s", st.PercentUsed, extra), NumState: 1}
 	}
-	if !spareKnown {
+	if !st.SpareKnown {
 		return Check{Name: name, State: StateUnknown, Value: val,
 			Detail: fmt.Sprintf("the NVMe did not report its available spare, so its health can't be fully judged: %.0f%% write endurance used, no media errors, %.0f°C.%s%s", st.PercentUsed, st.TempC, extraStorageNotes(st), extra), NumState: -1}
 	}

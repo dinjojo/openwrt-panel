@@ -497,3 +497,50 @@ func TestSnapshotsOnZeroPollers(t *testing.T) {
 		t.Errorf("History on empty poller = %#v, want empty non-nil", h)
 	}
 }
+
+// ---------- NVMe SMART parsing ----------
+
+func TestParseDiskSpareKnown(t *testing.T) {
+	cases := []struct {
+		name     string
+		parse    func([]byte, *DiskState)
+		out      string
+		avail    bool
+		known    bool
+		spare    float64
+		critWarn uint64
+		tempC    float64
+	}{
+		{"nvme-cli spare present", parseNvmeCLI,
+			`{"critical_warning":0,"temperature":314,"avail_spare":100,"percent_used":3,"media_errors":0}`,
+			true, true, 100, 0, 314 - 273.15},
+		{"nvme-cli reported zero spare", parseNvmeCLI,
+			`{"critical_warning":1,"temperature":314,"avail_spare":0,"percent_used":3}`,
+			true, true, 0, 1, 314 - 273.15},
+		{"nvme-cli spare missing", parseNvmeCLI,
+			`{"critical_warning":0,"temperature":314,"percent_used":3}`,
+			true, false, 0, 0, 314 - 273.15},
+		{"nvme-cli garbage", parseNvmeCLI, `not json`, false, false, 0, 0, 0},
+		{"smartctl spare present", parseSmartctl,
+			`{"nvme_smart_health_information_log":{"available_spare":87,"percent_used":5,"temperature":40}}`,
+			true, true, 87, 0, 40},
+		{"smartctl reported zero spare", parseSmartctl,
+			`{"nvme_smart_health_information_log":{"available_spare":0,"temperature":40}}`,
+			true, true, 0, 0, 40},
+		{"smartctl spare missing", parseSmartctl,
+			`{"nvme_smart_health_information_log":{"percent_used":5,"temperature":40,"critical_warning":2}}`,
+			true, false, 0, 2, 40},
+		{"smartctl no nvme log", parseSmartctl, `{"smartctl":{}}`, true, false, 0, 0, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var st DiskState
+			c.parse([]byte(c.out), &st)
+			if st.Available != c.avail || st.SpareKnown != c.known || st.AvailableSpare != c.spare ||
+				st.CriticalWarning != c.critWarn || math.Abs(st.TempC-c.tempC) > 1e-9 {
+				t.Errorf("got %+v, want avail=%v known=%v spare=%v crit=%v temp=%v",
+					st, c.avail, c.known, c.spare, c.critWarn, c.tempC)
+			}
+		})
+	}
+}

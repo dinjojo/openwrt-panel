@@ -278,9 +278,13 @@ func sntpOffset(server string) (float64, bool) {
 
 // DiskState is the latest NVMe SMART snapshot plus boot tracking.
 type DiskState struct {
-	Available       bool    // smartctl present and device readable
-	PercentUsed     float64 // NVMe "percentage used" (wear indicator)
-	AvailableSpare  float64 // percent of reserved blocks remaining
+	Available      bool    // smartctl present and device readable
+	PercentUsed    float64 // NVMe "percentage used" (wear indicator)
+	AvailableSpare float64 // percent of reserved blocks remaining; meaningful only if SpareKnown
+	// SpareKnown is true when the SMART output actually contained an
+	// available-spare value. A plain float64 can't tell an absent field from
+	// a genuine 0%, so consumers must check this before judging the spare.
+	SpareKnown      bool
 	MediaErrors     uint64
 	CriticalWarning uint64
 	TempC           float64
@@ -365,53 +369,71 @@ func (p *DiskPoller) refresh(dev string) {
 		_ = os.WriteFile(statePath, b, 0o644)
 	}
 
-	out, err := exec.Command("nvme", "smart-log", "-o", "json", dev).Output()
-	if err == nil {
-		// nvme-cli reports temperature in Kelvin.
-		var raw struct {
-			CriticalWarning float64 `json:"critical_warning"`
-			Temperature     float64 `json:"temperature"`
-			AvailSpare      float64 `json:"avail_spare"`
-			PercentUsed     float64 `json:"percent_used"`
-			MediaErrors     float64 `json:"media_errors"`
-			UnsafeShutdowns float64 `json:"unsafe_shutdowns"`
-		}
-		if json.Unmarshal(out, &raw) == nil {
-			st.Available = true
-			st.PercentUsed = raw.PercentUsed
-			st.AvailableSpare = raw.AvailSpare
-			st.MediaErrors = uint64(raw.MediaErrors)
-			st.CriticalWarning = uint64(raw.CriticalWarning)
-			st.UnsafeShutdowns = uint64(raw.UnsafeShutdowns)
-			st.TempC = raw.Temperature
-			if st.TempC > 200 {
-				st.TempC -= 273.15
-			}
-		}
+	if out, err := exec.Command("nvme", "smart-log", "-o", "json", dev).Output(); err == nil {
+		parseNvmeCLI(out, &st)
 	} else if out, err := exec.Command("smartctl", "-A", "-j", dev).Output(); err == nil {
-		// Fallback: smartmontools, which reports temperature in Celsius.
-		var raw struct {
-			NVMe struct {
-				PercentUsed    float64 `json:"percent_used"`
-				AvailableSpare float64 `json:"available_spare"`
-				MediaErrors    uint64  `json:"media_errors"`
-				CriticalWarn   uint64  `json:"critical_warning"`
-				Temperature    float64 `json:"temperature"`
-			} `json:"nvme_smart_health_information_log"`
-		}
-		if json.Unmarshal(out, &raw) == nil {
-			st.Available = true
-			st.PercentUsed = raw.NVMe.PercentUsed
-			st.AvailableSpare = raw.NVMe.AvailableSpare
-			st.MediaErrors = raw.NVMe.MediaErrors
-			st.CriticalWarning = raw.NVMe.CriticalWarn
-			st.TempC = raw.NVMe.Temperature
-		}
+		parseSmartctl(out, &st)
 	}
 
 	p.mu.Lock()
 	p.state = st
 	p.mu.Unlock()
+}
+
+// parseNvmeCLI fills st from `nvme smart-log -o json` output. nvme-cli
+// reports temperature in Kelvin. Leaves st untouched on undecodable JSON.
+func parseNvmeCLI(out []byte, st *DiskState) {
+	var raw struct {
+		CriticalWarning float64  `json:"critical_warning"`
+		Temperature     float64  `json:"temperature"`
+		AvailSpare      *float64 `json:"avail_spare"` // pointer: absent vs reported 0
+		PercentUsed     float64  `json:"percent_used"`
+		MediaErrors     float64  `json:"media_errors"`
+		UnsafeShutdowns float64  `json:"unsafe_shutdowns"`
+	}
+	if json.Unmarshal(out, &raw) != nil {
+		return
+	}
+	st.Available = true
+	st.PercentUsed = raw.PercentUsed
+	if raw.AvailSpare != nil {
+		st.AvailableSpare = *raw.AvailSpare
+		st.SpareKnown = true
+	}
+	st.MediaErrors = uint64(raw.MediaErrors)
+	st.CriticalWarning = uint64(raw.CriticalWarning)
+	st.UnsafeShutdowns = uint64(raw.UnsafeShutdowns)
+	st.TempC = raw.Temperature
+	if st.TempC > 200 {
+		st.TempC -= 273.15
+	}
+}
+
+// parseSmartctl fills st from `smartctl -A -j` output (fallback path).
+// smartmontools reports temperature in Celsius. Leaves st untouched on
+// undecodable JSON.
+func parseSmartctl(out []byte, st *DiskState) {
+	var raw struct {
+		NVMe struct {
+			PercentUsed    float64  `json:"percent_used"`
+			AvailableSpare *float64 `json:"available_spare"` // pointer: absent vs reported 0
+			MediaErrors    uint64   `json:"media_errors"`
+			CriticalWarn   uint64   `json:"critical_warning"`
+			Temperature    float64  `json:"temperature"`
+		} `json:"nvme_smart_health_information_log"`
+	}
+	if json.Unmarshal(out, &raw) != nil {
+		return
+	}
+	st.Available = true
+	st.PercentUsed = raw.NVMe.PercentUsed
+	if raw.NVMe.AvailableSpare != nil {
+		st.AvailableSpare = *raw.NVMe.AvailableSpare
+		st.SpareKnown = true
+	}
+	st.MediaErrors = raw.NVMe.MediaErrors
+	st.CriticalWarning = raw.NVMe.CriticalWarn
+	st.TempC = raw.NVMe.Temperature
 }
 
 func bootID() string {

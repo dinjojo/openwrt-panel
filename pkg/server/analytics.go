@@ -15,9 +15,9 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/galpt/cake-stats/pkg/health"
 	"github.com/galpt/cake-stats/pkg/vm"
 	fiber "github.com/gofiber/fiber/v3"
 )
@@ -388,28 +388,12 @@ func (s *Server) shapedBitsPerS() float64 {
 	return 415e6
 }
 
-// parseBandwidth parses a tc bandwidth string ("415Mbit", "1Gbit", "500Kbit").
+// parseBandwidth parses a tc bandwidth string ("415Mbit", "1Gbit", "50MBps")
+// into bits/s, returning 0 when unparseable. It delegates to
+// health.ShapedBits so both packages agree on tc units: "bit" is bits/s,
+// "bps" is BYTES/s (×8), and K/M/G/T prefixes are accepted in either case.
 func parseBandwidth(s string) float64 {
-	s = strings.TrimSpace(strings.ToLower(s))
-	var mult float64
-	switch {
-	case strings.HasSuffix(s, "gbit"):
-		mult = 1e9
-		s = strings.TrimSuffix(s, "gbit")
-	case strings.HasSuffix(s, "mbit"):
-		mult = 1e6
-		s = strings.TrimSuffix(s, "mbit")
-	case strings.HasSuffix(s, "kbit"):
-		mult = 1e3
-		s = strings.TrimSuffix(s, "kbit")
-	default:
-		return 0
-	}
-	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil {
-		return 0
-	}
-	return v * mult
+	return health.ShapedBits(s)
 }
 
 // TunnelReport is the response of /api/tunnel.
